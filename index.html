@@ -8,3 +8,26 @@
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=IBM+Plex+Mono:wght@400;500&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+:root {
+  --bg:#0c0e12; --panel:#131720; --border:#1f2736; --accent:#e8c84a;
+  --accent2:#4ae8b0; --text:#d4dae4; --muted:#5a6478; --danger:#e84a4a;
+  --green:#2ecc71; --orange:#f39c12;
+}
+*{margin:0;padding:0;box-sizing:border-box;}
+html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;}
+
+.app{display:grid;grid-template-rows:52px 1fr;height:100vh;}
+
+header{
+  background:var(--panel);border-bottom:2px solid var(--accent);
+  display:flex;align-items:center;justify-content:space-between;padding:0 20px;
+  flex-shrink:0;z-index:100;
+}
+.logo{font-family:'Bebas Neue',sans-serif;font-size:1.55rem;letter-spacing:.1em;color:var(--accent);}
+.logo span{color:var(--accent2);}
+.header-right{display:flex;align-items:center;gap:14px;}
+.freshness{font-family:'IBM Plex Mono',monospace;font-size:.6rem;color:var(--muted);letter-spacing:.08em;}
+.freshness strong{color:var(--accent2);}
+
+.main{display:grid;grid-template-columns:300px 1fr;overflow:hidden;}
