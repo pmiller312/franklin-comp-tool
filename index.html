@@ -125,6 +125,72 @@ select:focus,input:focus{border-color:var(--accent);}
 .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--panel);border:1px solid var(--border);color:var(--text);padding:9px 18px;border-radius:4px;font-family:'IBM Plex Mono',monospace;font-size:.68rem;z-index:9999;opacity:0;transition:opacity .3s;pointer-events:none;}
 .toast.show{opacity:1;}
 .toast.err{border-color:var(--danger);color:var(--danger);}
+
+/* ── REGRESSION PANEL ── */
+.reg-btn{
+  padding:5px 14px;background:transparent;border:1px solid var(--accent2);
+  color:var(--accent2);font-family:'IBM Plex Mono',monospace;font-size:.65rem;
+  border-radius:2px;cursor:pointer;letter-spacing:.06em;transition:all .15s;white-space:nowrap;
+}
+.reg-btn:hover{background:var(--accent2);color:#0c0e12;}
+.reg-btn:disabled{border-color:var(--border);color:var(--muted);cursor:not-allowed;}
+
+.reg-drawer{
+  position:absolute;bottom:0;left:0;right:0;z-index:2000;
+  background:var(--panel);border-top:2px solid var(--accent2);
+  transform:translateY(100%);transition:transform .3s ease;
+  max-height:70vh;display:flex;flex-direction:column;
+}
+.reg-drawer.open{transform:translateY(0);}
+.reg-drawer-header{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:10px 18px;border-bottom:1px solid var(--border);flex-shrink:0;
+}
+.reg-drawer-title{font-family:'Bebas Neue',sans-serif;font-size:1.2rem;letter-spacing:.08em;color:var(--accent2);}
+.reg-close{background:transparent;border:none;color:var(--muted);font-size:1.1rem;cursor:pointer;padding:2px 6px;}
+.reg-close:hover{color:var(--danger);}
+.reg-body{flex:1;overflow-y:auto;padding:16px 18px;display:grid;grid-template-columns:1fr 1fr;gap:18px;}
+.reg-body::-webkit-scrollbar{width:3px;}
+.reg-body::-webkit-scrollbar-thumb{background:var(--border);}
+
+.reg-section-title{
+  font-family:'IBM Plex Mono',monospace;font-size:.6rem;color:var(--muted);
+  text-transform:uppercase;letter-spacing:.1em;margin-bottom:8px;
+  grid-column:span 2;border-bottom:1px solid var(--border);padding-bottom:4px;
+}
+.reg-controls{grid-column:span 2;display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;}
+.reg-ctrl-group{display:flex;flex-direction:column;gap:3px;}
+.reg-ctrl-group label{font-family:'IBM Plex Mono',monospace;font-size:.58rem;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;}
+.reg-ctrl-group select,.reg-ctrl-group input{
+  padding:4px 8px;background:#0a0c10;border:1px solid var(--border);
+  color:var(--text);font-family:'IBM Plex Mono',monospace;font-size:.68rem;
+  border-radius:2px;outline:none;min-width:120px;
+}
+
+/* Results */
+.reg-stat-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;grid-column:span 2;}
+.reg-stat-box{background:#0a0c10;border:1px solid var(--border);border-radius:3px;padding:10px;text-align:center;}
+.reg-stat-box .rsv{font-family:'Bebas Neue',sans-serif;font-size:1.3rem;color:var(--accent);letter-spacing:.05em;}
+.reg-stat-box .rsl{font-family:'IBM Plex Mono',monospace;font-size:.55rem;color:var(--muted);text-transform:uppercase;margin-top:2px;}
+
+.reg-eq-box{
+  grid-column:span 2;background:#0a0c10;border:1px solid var(--accent2);
+  border-radius:3px;padding:12px 16px;font-family:'IBM Plex Mono',monospace;
+  font-size:.78rem;color:var(--accent2);line-height:1.8;
+}
+.reg-eq-label{font-size:.58rem;color:var(--muted);text-transform:uppercase;letter-spacing:.1em;margin-bottom:6px;}
+
+.reg-coef-table{grid-column:span 2;width:100%;border-collapse:collapse;font-family:'IBM Plex Mono',monospace;font-size:.68rem;}
+.reg-coef-table th{padding:5px 10px;text-align:left;color:var(--muted);font-size:.58rem;text-transform:uppercase;letter-spacing:.08em;border-bottom:1px solid var(--border);}
+.reg-coef-table td{padding:5px 10px;border-bottom:1px solid rgba(31,39,54,.5);}
+.reg-coef-table tr:hover td{background:rgba(74,232,176,.04);}
+.sig{color:var(--accent2);}
+.insig{color:var(--muted);}
+
+.reg-chart-wrap{grid-column:span 2;height:180px;position:relative;}
+canvas#reg-canvas{width:100%;height:100%;}
+
+.reg-empty{grid-column:span 2;text-align:center;padding:30px;color:var(--muted);font-family:'IBM Plex Mono',monospace;font-size:.7rem;}
 </style>
 </head>
 <body>
@@ -133,6 +199,7 @@ select:focus,input:focus{border-color:var(--accent);}
   <div class="logo">Franklin County <span>Live</span> Market Data</div>
   <div class="header-right">
     <div class="freshness" id="freshness-tag">No data loaded</div>
+    <button class="reg-btn" id="reg-btn" onclick="toggleRegression()" disabled>📈 Regression Analysis</button>
   </div>
 </header>
 
@@ -147,8 +214,8 @@ select:focus,input:focus{border-color:var(--accent);}
       <div class="field-row">
         <div class="field-label">Sale Date Range</div>
         <div class="range-row">
-          <input type="text" id="q-date-from" value="2023-01-01" placeholder="YYYY-MM-DD">
-          <input type="text" id="q-date-to" id="q-date-to" placeholder="YYYY-MM-DD">
+          <input type="text" id="q-date-from" value="01/01/2023" placeholder="MM/DD/YYYY">
+          <input type="text" id="q-date-to" placeholder="MM/DD/YYYY">
         </div>
       </div>
 
@@ -158,15 +225,20 @@ select:focus,input:focus{border-color:var(--accent);}
       </div>
 
       <div class="field-row">
-        <div class="field-label">Property Class</div>
+        <div class="field-label">Vacant Land Class (Ohio DTE)</div>
         <select id="q-class">
-          <option value="">All Classes</option>
-          <option value="510" selected>510 — Vacant Residential</option>
-          <option value="511">511 — Platted Vacant Land</option>
-          <option value="520">520 — Vacant Commercial</option>
-          <option value="530">530 — Vacant Industrial</option>
-          <option value="500">500 — All Vacant (500s)</option>
-          <option value="ALL">All Property Classes</option>
+          <option value="VACANT" selected>All Vacant Land</option>
+          <option value="500">500 — Residential Vacant Lot</option>
+          <option value="501">501 — Res. Unplatted 0–9.9 ac</option>
+          <option value="502">502 — Res. Unplatted 10–19.9 ac</option>
+          <option value="503">503 — Res. Unplatted 20–29.9 ac</option>
+          <option value="504">504 — Res. Unplatted 30–39.9 ac</option>
+          <option value="505">505 — Res. Unplatted 40+ ac</option>
+          <option value="100">100 — Agricultural Vacant</option>
+          <option value="110">110 — Agricultural Vacant (CAUV)</option>
+          <option value="300">300 — Industrial Vacant</option>
+          <option value="400">400 — Commercial Vacant</option>
+          <option value="ALL">All Property Classes (unfiltered)</option>
         </select>
       </div>
 
@@ -227,6 +299,19 @@ select:focus,input:focus{border-color:var(--accent);}
       <div class="legend-row"><span class="ldot" style="width:12px;height:12px;background:#e84a4a"></span>&gt; $500K</div>
       <div style="margin-top:7px;color:var(--text)">Opacity = Recency</div>
     </div>
+    <!-- REGRESSION DRAWER -->
+    <div class="reg-drawer" id="reg-drawer">
+      <div class="reg-drawer-header">
+        <div class="reg-drawer-title">Linear Regression Analysis</div>
+        <div style="display:flex;align-items:center;gap:12px">
+          <span id="reg-sample-label" style="font-family:'IBM Plex Mono',monospace;font-size:.6rem;color:var(--muted)"></span>
+          <button class="reg-close" onclick="toggleRegression()">✕</button>
+        </div>
+      </div>
+      <div class="reg-body" id="reg-body">
+        <div class="reg-empty">Fetch data then open Regression Analysis</div>
+      </div>
+    </div>
   </div>
 </div>
 </div>
@@ -244,7 +329,7 @@ const FIELDS = [
   "PARCELID","SITEADDRESS","ZIPCD","SALEDATE","SALEPRICE",
   "STATEDAREA","CLASSCD","CLASSDSCRP","USECD","CVTTXDSCRP",
   "SCHLDSCRP","OWNERNME1","PRPRTYDSCRP","PRPRTYDSCRP2",
-  "FLOOD","WATERSERV","SEWERSERV","TOTVALUEBASE","X_COORD","Y_COORD"
+  "FLOOD","WATERSERV","SEWERSERV","TOTVALUEBASE","BLDVALUEBASE","X_COORD","Y_COORD"
 ].join(",");
 
 // ── MAP ───────────────────────────────────────────────────────────────────────
@@ -263,7 +348,7 @@ let isFetching = false;
 // ── HELPERS ───────────────────────────────────────────────────────────────────
 function fmt(n){ return n>=1e6?"$"+(n/1e6).toFixed(2)+"M":n>=1e3?"$"+(n/1e3).toFixed(0)+"K":"$"+Math.round(n); }
 function fmtFull(n){ return "$"+Math.round(n).toLocaleString(); }
-function fmtDate(ts){ if(!ts) return "—"; const d=new Date(ts); return d.toISOString().slice(0,10); }
+function fmtDate(ts){ if(!ts) return "—"; const d=new Date(ts); const m=String(d.getUTCMonth()+1).padStart(2,'0'); const day=String(d.getUTCDate()).padStart(2,'0'); const y=d.getUTCFullYear(); return `${m}/${day}/${y}`; }
 
 function priceColor(p){
   if(p<50000)  return "#4ae8b0";
@@ -309,26 +394,33 @@ async function runQuery(){
   document.getElementById('progress-wrap').style.display = 'block';
   setProgress(5, 'Building query…');
 
-  const dateFrom = document.getElementById('q-date-from').value.trim() || '2023-01-01';
-  const dateTo   = (document.getElementById('q-date-to').value || '').trim()
-                    || new Date().toISOString().slice(0,10);
+  // Parse mm/dd/yyyy or yyyy-mm-dd inputs -> yyyy-mm-dd for the API
+  function parseInputDate(val, fallback){
+    const s = (val||'').trim();
+    const mdy = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+    if(mdy) return `${mdy[3]}-${mdy[1].padStart(2,'0')}-${mdy[2].padStart(2,'0')}`;
+    if(/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+    return fallback;
+  }
+  const todayISO = new Date().toISOString().slice(0,10);
+  const dateFrom = parseInputDate(document.getElementById('q-date-from').value, '2023-01-01');
+  const dateTo   = parseInputDate(document.getElementById('q-date-to').value, todayISO);
   const priceMin = parseInt(document.getElementById('q-price-min').value) || 1000;
   const classVal = document.getElementById('q-class').value;
   const limit    = parseInt(document.getElementById('q-limit').value);
 
   // Build WHERE clause
-  const dtFrom = new Date(dateFrom).getTime();
-  const dtTo   = new Date(dateTo).getTime();
   let where = `SALEDATE >= DATE '${dateFrom}' AND SALEDATE <= DATE '${dateTo}' AND SALEPRICE >= ${priceMin}`;
 
-  if(classVal && classVal !== 'ALL'){
-    if(classVal === '500'){
-      // All 500-series vacant codes
-      where += ` AND CLASSCD LIKE '5%'`;
-    } else {
-      where += ` AND CLASSCD = '${classVal}'`;
-    }
+  // Vacant land code filter
+  if(classVal === 'VACANT'){
+    // All Ohio DTE vacant land codes: 100,110,300,400,500-505
+    where += ` AND CLASSCD IN ('100','110','300','400','500','501','502','503','504','505')`;
+  } else if(classVal && classVal !== 'ALL'){
+    where += ` AND CLASSCD = '${classVal}'`;
   }
+  // Always exclude parcels with buildings (BLDVALUEBASE > 0 means improvements present)
+  where += ` AND (BLDVALUEBASE IS NULL OR BLDVALUEBASE = 0)`;
 
   try {
     const results = await paginatedQuery(where, limit);
@@ -413,6 +505,7 @@ function processResults(features, dateFrom, dateTo){
       // Sanity check coords — Franklin County bounds
       if(lat < 39.7 || lat > 40.3 || lng < -83.4 || lng > -82.6) return null;
 
+      const bldVal = p.BLDVALUEBASE || 0;
       return {
         parcel:    p.PARCELID || '',
         address:   p.SITEADDRESS || '',
@@ -431,11 +524,14 @@ function processResults(features, dateFrom, dateTo){
         water:     p.WATERSERV || 'N',
         sewer:     p.SEWERSERV || 'N',
         mkt_value: p.TOTVALUEBASE || 0,
+        bld_value: bldVal,
         lat, lng,
       };
     })
     .filter(Boolean)
-    .filter(s => s.sale_price > 0);
+    .filter(s => s.sale_price > 0)
+    // Client-side scrub: remove any parcels with building value (has improvements)
+    .filter(s => s.bld_value === 0 || s.bld_value === null);
 
   setProgress(100, `Done — ${allSales.length.toLocaleString()} sales loaded`);
 
@@ -445,10 +541,11 @@ function processResults(features, dateFrom, dateTo){
 
   document.getElementById('source-badge').innerHTML =
     `<span class="live">● LIVE DATA</span> — Franklin County Auditor GIS<br>` +
-    `${allSales.length.toLocaleString()} sales · ${dateFrom} → ${dateTo}<br>` +
+    `${allSales.length.toLocaleString()} sales · ${isoToMDY(dateFrom)} → ${isoToMDY(dateTo)}<br>` +
     `Updated Mon–Fri nightly`;
 
   toast(`✓ Loaded ${allSales.length.toLocaleString()} real sales`);
+  document.getElementById('reg-btn').disabled = false;
 }
 
 // ── FILTERS ───────────────────────────────────────────────────────────────────
@@ -500,6 +597,142 @@ function buildClassFilters(){
   });
 }
 
+// ── MOBILE API PARCEL DETAIL ─────────────────────────────────────────────────
+// Fetch full parcel detail from the GIS FeatureServer (CORS-friendly, same source as bulk query)
+const GIS_DETAIL_FIELDS = [
+  "PARCELID","SITEADDRESS","ZIPCD","SALEDATE","SALEPRICE","STATEDAREA","ACRES",
+  "CLASSCD","CLASSDSCRP","USECD","CVTTXCD","CVTTXDSCRP","SCHLTXCD","SCHLDSCRP",
+  "NBHDCD","OWNERNME1","OWNERNME2","MAILNME1","MAILNME2","PSTLADDRES","PSTLCITYSTZIP",
+  "PRPRTYDSCRP","PRPRTYDSCRP2","PRPRTYDSCRP3","CNVYNAME",
+  "FLOOD","WATERSERV","SEWERSERV",
+  "TOTVALUEBASE","LNDVALUEBASE","BLDVALUEBASE",
+  "RESYRBLT","RESFLRAREA","BATHS","BEDRMS","ROOMS",
+  "PCLASS","PROPTYP","CAUV","OWNEROCCUPIED","HOMSTD","RENTAL",
+  "TOTCNTTXOD","CNTTXBLVAL"
+].join(",");
+
+async function fetchParcelDetail(parcelId){
+  try {
+    // Query GIS by exact PARCELID
+    const params = new URLSearchParams({
+      where: `PARCELID = '${parcelId}'`,
+      outFields: GIS_DETAIL_FIELDS,
+      returnGeometry: 'false',
+      f: 'json',
+    });
+    const r = await fetch(`${GIS_BASE}?${params}`);
+    if(!r.ok) return null;
+    const data = await r.json();
+    if(data.error || !data.features?.length) return null;
+    return data.features[0].attributes;
+  } catch(e){ return null; }
+}
+
+function buildQuickPopup(s, color){
+  // Shown immediately while API loads
+  const ppa = s.acres>0 ? fmtFull(s.sale_price/s.acres)+'/ac' : '—';
+  return `
+    <div id="pu-${s.parcel.replace(/[^a-z0-9]/gi,'_')}" style="min-width:260px">
+      <div class="pu-addr">${s.address||s.parcel}</div>
+      <div class="pu-grid">
+        <div class="pu-field"><label>Sale Price</label><span style="color:${color}">${fmtFull(s.sale_price)}</span></div>
+        <div class="pu-field"><label>Sale Date</label><span>${fmtDate(s.sale_date)}</span></div>
+        <div class="pu-field"><label>Acres</label><span>${s.acres||'—'}</span></div>
+        <div class="pu-field"><label>$/Acre</label><span>${ppa}</span></div>
+      </div>
+      <div class="pu-footer" style="text-align:center;padding:8px 0 4px">
+        <span style="color:var(--muted);font-size:.6rem">⏳ Loading full detail…</span>
+      </div>
+      <div style="display:flex;gap:6px;margin-top:4px">
+        <button onclick="auditorOpen('${s.parcel}')" style="flex:1;padding:5px 4px;background:var(--accent);color:#0c0e12;border:none;border-radius:2px;cursor:pointer;font-family:'IBM Plex Mono',monospace;font-size:.62rem;font-weight:700">🔗 Auditor Site</button>
+        <button onclick="auditorCopy('${s.parcel}', this)" style="flex:1;padding:5px 4px;background:transparent;color:var(--accent2);border:1px solid var(--accent2);border-radius:2px;cursor:pointer;font-family:'IBM Plex Mono',monospace;font-size:.62rem">📋 Copy PIN</button>
+      </div>
+    </div>`;
+}
+
+function buildFullPopup(s, color, d){
+  // d = flat GIS attributes object from FeatureServer query
+  const acres   = d.STATEDAREA || s.acres || 0;
+  const sqft    = acres>0 ? Math.round(acres*43560).toLocaleString()+' SF' : '—';
+  const ppa     = acres>0 ? fmtFull(s.sale_price/acres)+'/ac' : '—';
+  const ppsf    = acres>0 ? '$'+(s.sale_price/(acres*43560)).toFixed(2)+'/SF' : '—';
+  const owner   = [d.OWNERNME1, d.OWNERNME2].filter(Boolean).join(' / ') || s.owner || '—';
+  const mktVal  = d.TOTVALUEBASE > 0 ? fmtFull(d.TOTVALUEBASE) : '—';
+  const lndVal  = d.LNDVALUEBASE > 0 ? fmtFull(d.LNDVALUEBASE) : '—';
+  const taxAmt  = d.TOTCNTTXOD  > 0 ? fmtFull(d.TOTCNTTXOD)  : '—';
+  const legal   = [d.PRPRTYDSCRP, d.PRPRTYDSCRP2, d.PRPRTYDSCRP3].filter(Boolean).join(' ');
+  const utils   = [
+    d.WATERSERV==='Y'?'Water':'', d.SEWERSERV==='Y'?'Sewer':''
+  ].filter(Boolean).join(', ') || '—';
+  const floodOk = d.FLOOD !== 'Y';
+  const mailAddr= [d.PSTLADDRES, d.PSTLCITYSTZIP].filter(Boolean).join(', ');
+  const useDesc = d.CLASSDSCRP || s.class_desc || s.class_cd || '—';
+  const school  = (d.SCHLDSCRP || s.school || '—').slice(0,24);
+  const district= (d.CVTTXDSCRP || s.district || '—').slice(0,24);
+  const nbhd    = d.NBHDCD || '—';
+  const cauv    = d.CAUV === 'Y' ? '✓ Yes' : 'No';
+  const rental  = d.RENTAL === 'Y' ? '✓ Yes' : 'No';
+
+  function row(label, val){ return `<div class="pu-field"><label>${label}</label><span style="font-size:.7rem">${val}</span></div>`; }
+  function section(title){ return `<div style="font-family:'IBM Plex Mono',monospace;font-size:.56rem;color:var(--muted);text-transform:uppercase;letter-spacing:.1em;margin:7px 0 4px;padding-top:6px;border-top:1px solid #1f2736">${title}</div>`; }
+
+  return `
+    <div style="min-width:300px;max-width:330px">
+      <div class="pu-addr">${d.SITEADDRESS||s.address||s.parcel}</div>
+
+      ${section('Sale Info')}
+      <div class="pu-grid">
+        ${row('Sale Price','<span style="color:'+color+'">'+fmtFull(s.sale_price)+'</span>')}
+        ${row('Sale Date', fmtDate(s.sale_date))}
+        ${row('Legal Acres', acres||'—')}
+        ${row('Sq Ft', sqft)}
+        ${row('$/Acre', ppa)}
+        ${row('$/SF', ppsf)}
+      </div>
+
+      ${section('Owner & Parcel')}
+      <div class="pu-grid">
+        ${row('Owner', owner.slice(0,30))}
+        ${row('Parcel #', s.parcel)}
+        ${row('Mail Address', mailAddr.slice(0,30)||'—')}
+        ${row('Neighborhood', nbhd)}
+        ${row('Use / Class', useDesc.slice(0,26))}
+        ${row('DTE Code', d.CLASSCD||s.class_cd||'—')}
+        ${row('Tax District', district)}
+        ${row('School Dist.', school)}
+      </div>
+
+      ${section('Assessed Values & Tax')}
+      <div class="pu-grid">
+        ${row('Market Value', mktVal)}
+        ${row('Land Value', lndVal)}
+        ${row('Annual Tax', taxAmt)}
+        ${row('CAUV', cauv)}
+      </div>
+
+      ${section('Site Characteristics')}
+      <div class="pu-grid">
+        ${row('Flood Zone', '<span style="color:'+(floodOk?'#4ae8b0':'#e84a4a')+'">'+(floodOk?'✓ No':'⚠ Yes')+'</span>')}
+        ${row('Utilities', utils)}
+        ${row('Water Svc', d.WATERSERV==='Y'?'✓ Yes':'No')}
+        ${row('Sewer Svc', d.SEWERSERV==='Y'?'✓ Yes':'No')}
+      </div>
+
+      ${legal ? `
+      ${section('Legal Description')}
+      <div style="font-family:'IBM Plex Mono',monospace;font-size:.62rem;color:var(--muted);line-height:1.5;padding:4px 0">${legal}</div>` : ''}
+
+      <div style="display:flex;gap:6px;margin-top:10px;padding-top:8px;border-top:1px solid #1f2736">
+        <button onclick="auditorOpen('${s.parcel}')" style="flex:1;padding:6px 4px;background:var(--accent);color:#0c0e12;border:none;border-radius:2px;cursor:pointer;font-family:'IBM Plex Mono',monospace;font-size:.62rem;font-weight:700;letter-spacing:.04em">
+          🔗 Open Auditor Site
+        </button>
+        <button onclick="auditorCopy('${s.parcel}', this)" style="flex:1;padding:6px 4px;background:transparent;color:var(--accent2);border:1px solid var(--accent2);border-radius:2px;cursor:pointer;font-family:'IBM Plex Mono',monospace;font-size:.62rem;letter-spacing:.04em">
+          📋 Copy Parcel #
+        </button>
+      </div>
+    </div>`;
+}
+
 // ── RENDER ────────────────────────────────────────────────────────────────────
 function getFiltered(){
   return allSales.filter(s => activeClasses.has(s.class_desc||s.class_cd||'Unknown'));
@@ -514,30 +747,21 @@ function render(){
     const color = priceColor(s.sale_price);
     const r     = priceRadius(s.sale_price);
     const op    = saleOpacity(s.sale_date);
-    const dateStr = fmtDate(s.sale_date);
-    const ppa   = s.acres > 0 ? fmtFull(s.sale_price/s.acres)+'/ac' : '—';
 
     const circle = L.circleMarker([s.lat,s.lng],{
       radius:r, fillColor:color, color:'rgba(0,0,0,.3)', weight:1, fillOpacity:op
     });
 
-    circle.bindPopup(`
-      <div style="min-width:215px">
-        <div class="pu-addr">${s.address||s.parcel}</div>
-        <div class="pu-grid">
-          <div class="pu-field"><label>Sale Price</label><span style="color:${color}">${fmtFull(s.sale_price)}</span></div>
-          <div class="pu-field"><label>Sale Date</label><span>${dateStr}</span></div>
-          <div class="pu-field"><label>Acres</label><span>${s.acres||'—'}</span></div>
-          <div class="pu-field"><label>$/Acre</label><span>${ppa}</span></div>
-          <div class="pu-field"><label>Class</label><span style="font-size:.68rem">${s.class_desc||s.class_cd||'—'}</span></div>
-          <div class="pu-field"><label>District</label><span style="font-size:.66rem">${(s.district||'—').slice(0,20)}</span></div>
-        </div>
-        <div class="pu-footer">
-          Parcel: ${s.parcel} · Flood: ${s.flood==='Y'?'⚠ Yes':'No'} · Water: ${s.water==='Y'?'✓':'✗'} · Sewer: ${s.sewer==='Y'?'✓':'✗'}<br>
-          <a href="https://property.franklincountyauditor.com/_web/datalets/datalet.aspx?mode=&UseSearch=no&pin=${s.parcel}" target="_blank">View on Auditor Site ↗</a>
-        </div>
-      </div>
-    `, {maxWidth:265});
+    // Bind initial quick popup
+    circle.bindPopup(buildQuickPopup(s, color), {maxWidth:330, maxHeight:480});
+
+    // On open: fetch full detail from mobile API and update popup
+    circle.on('popupopen', async () => {
+      const detail = await fetchParcelDetail(s.parcel);
+      if(detail && circle.getPopup()){
+        circle.getPopup().setContent(buildFullPopup(s, color, detail));
+      }
+    });
 
     circle.addTo(markerLayer);
   });
@@ -584,10 +808,12 @@ function updateList(filtered){
   });
 }
 
+function isoToMDY(iso){ const [y,m,d]=(iso||'').split('-'); return m&&d&&y?`${m}/${d}/${y}`:iso; }
+
 function updateFreshnessTag(from, to){
   const now = new Date().toLocaleString('en-US',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'});
   document.getElementById('freshness-tag').innerHTML =
-    `<strong>LIVE</strong> · fetched ${now} · ${from} → ${to}`;
+    `<strong>LIVE</strong> · fetched ${now} · ${isoToMDY(from)} → ${isoToMDY(to)}`;
 }
 
 function clearData(){
@@ -601,11 +827,375 @@ function clearData(){
   document.getElementById('s-ppa').textContent = '—';
   document.getElementById('freshness-tag').textContent = 'No data loaded';
   document.getElementById('source-badge').innerHTML = '<span class="warn">⚠ No data loaded</span><br>Set filters and click <strong>Fetch Live Data</strong>';
+  document.getElementById('reg-btn').disabled = true;
+  regOpen = false;
+  document.getElementById('reg-drawer').classList.remove('open');
+}
+
+
+// ── REGRESSION ENGINE ─────────────────────────────────────────────────────────
+
+let regOpen = false;
+
+function toggleRegression(){
+  regOpen = !regOpen;
+  document.getElementById('reg-drawer').classList.toggle('open', regOpen);
+  if(regOpen) runRegression();
+}
+
+// OLS via normal equations: β = (XᵀX)⁻¹Xᵀy
+// Handles multiple predictors + intercept
+function ols(X, y){
+  const n = y.length;
+  const k = X[0].length;
+  // XtX = X' * X
+  const XtX = Array.from({length:k},(_,i)=>Array.from({length:k},(_,j)=>
+    X.reduce((s,row)=>s+row[i]*row[j],0)));
+  // Xty = X' * y
+  const Xty = Array.from({length:k},(_,i)=>X.reduce((s,row,r)=>s+row[i]*y[r],0));
+  // Invert XtX via Gauss-Jordan
+  const inv = invertMatrix(XtX);
+  if(!inv) return null;
+  // beta = inv * Xty
+  const beta = inv.map(row=>row.reduce((s,v,j)=>s+v*Xty[j],0));
+  // Fitted values & residuals
+  const yhat = X.map(row=>row.reduce((s,v,j)=>s+v*beta[j],0));
+  const resid = y.map((yi,i)=>yi-yhat[i]);
+  const ybar  = y.reduce((s,v)=>s+v,0)/n;
+  const SST   = y.reduce((s,v)=>s+(v-ybar)**2,0);
+  const SSE   = resid.reduce((s,v)=>s+v*v,0);
+  const SSR   = SST-SSE;
+  const R2    = SST>0 ? SSR/SST : 0;
+  const adjR2 = 1-(1-R2)*(n-1)/(n-k);
+  const MSE   = SSE/(n-k);
+  const SE    = inv.map((_,i)=>Math.sqrt(Math.max(0,inv[i][i]*MSE)));
+  const tstat = beta.map((b,i)=>SE[i]>0?b/SE[i]:0);
+  const Fstat = k>1 ? (SSR/(k-1))/MSE : 0;
+  return { beta, SE, tstat, R2, adjR2, MSE, SSE, SST, Fstat, yhat, resid, n, k };
+}
+
+function invertMatrix(M){
+  const n = M.length;
+  const aug = M.map((row,i)=>[...row,...Array.from({length:n},(_,j)=>i===j?1:0)]);
+  for(let col=0;col<n;col++){
+    let maxR = col;
+    for(let r=col+1;r<n;r++) if(Math.abs(aug[r][col])>Math.abs(aug[maxR][col])) maxR=r;
+    [aug[col],aug[maxR]]=[aug[maxR],aug[col]];
+    const piv = aug[col][col];
+    if(Math.abs(piv)<1e-12) return null;
+    for(let j=0;j<2*n;j++) aug[col][j]/=piv;
+    for(let r=0;r<n;r++) if(r!==col){
+      const f=aug[r][col];
+      for(let j=0;j<2*n;j++) aug[r][j]-=f*aug[col][j];
+    }
+  }
+  return aug.map(row=>row.slice(n));
+}
+
+// t-distribution p-value approximation (two-tailed)
+function tPval(t, df){
+  t = Math.abs(t);
+  const x = df/(df+t*t);
+  // Regularized incomplete beta approximation
+  let bt = 0;
+  if(x>0 && x<1){
+    const a=df/2, b=0.5;
+    bt = Math.exp(a*Math.log(x)+b*Math.log(1-x)) / (x*(a+b));
+    // continued fraction
+    let f=1,c=1,d=1-((a+b)*x)/(a+1);
+    if(Math.abs(d)<1e-30) d=1e-30; d=1/d;
+    f=d;
+    for(let m=1;m<=50;m++){
+      let aa=m*(b-m)*x/((a+2*m-1)*(a+2*m));
+      d=1+aa*d; if(Math.abs(d)<1e-30)d=1e-30; c=1+aa/c; if(Math.abs(c)<1e-30)c=1e-30;
+      d=1/d; f*=d*c;
+      aa=-(a+m)*(a+b+m)*x/((a+2*m)*(a+2*m+1));
+      d=1+aa*d; if(Math.abs(d)<1e-30)d=1e-30; c=1+aa/c; if(Math.abs(c)<1e-30)c=1e-30;
+      d=1/d; const del=d*c; f*=del;
+      if(Math.abs(del-1)<1e-8) break;
+    }
+    bt = bt*f/a;
+  }
+  return Math.min(1, Math.max(0, bt));
+}
+
+function sigStars(p){
+  if(p<0.001) return '***';
+  if(p<0.01)  return '**';
+  if(p<0.05)  return '*';
+  if(p<0.1)   return '·';
+  return '';
+}
+
+function runRegression(){
+  const body = document.getElementById('reg-body');
+  const filtered = getFiltered().filter(s=>s.acres>0 && s.sale_price>0);
+
+  if(filtered.length < 5){
+    body.innerHTML = '<div class="reg-empty">Need at least 5 sales with acreage data to run regression.</div>';
+    return;
+  }
+
+  const depVar   = document.getElementById('reg-dep')?.value   || 'price_per_acre';
+  const useLog   = document.getElementById('reg-log')?.value   || 'log';
+  const minAcres = parseFloat(document.getElementById('reg-min-ac')?.value||0);
+  const maxAcres = parseFloat(document.getElementById('reg-max-ac')?.value||9999);
+
+  // Filter by acreage bounds
+  const data = filtered.filter(s=>s.acres>=minAcres && s.acres<=maxAcres);
+  if(data.length < 5){
+    body.innerHTML = '<div class="reg-empty">Not enough sales in that acreage range. Adjust filters.</div>';
+    return;
+  }
+
+  // Build y vector
+  const raw_y = data.map(s=>{
+    if(depVar==='price_per_acre') return s.sale_price / s.acres;
+    if(depVar==='total_price')    return s.sale_price;
+    return s.sale_price / s.acres;
+  });
+  const y = useLog==='log' ? raw_y.map(v=>Math.log(v)) : raw_y;
+
+  // Build X matrix [intercept, acres, log_acres, date_trend]
+  const minDate = Math.min(...data.map(s=>s.sale_date));
+  const maxDate = Math.max(...data.map(s=>s.sale_date));
+  const dateRange = maxDate - minDate || 1;
+
+  const X = data.map(s=>{
+    const ac = s.acres;
+    const dt = (s.sale_date - minDate) / dateRange; // 0–1 time trend
+    return [1, ac, Math.log(ac), dt];
+  });
+
+  const labels = ['Intercept', 'Acres', 'Ln(Acres)', 'Time Trend'];
+  const result = ols(X, y);
+  if(!result){ body.innerHTML='<div class="reg-empty">Matrix inversion failed — data may be collinear.</div>'; return; }
+
+  const { beta, SE, tstat, R2, adjR2, MSE, Fstat, yhat, resid, n, k } = result;
+  const RMSE = Math.sqrt(MSE);
+  const df   = n - k;
+
+  // Derived stats
+  const ybar   = y.reduce((s,v)=>s+v,0)/n;
+  const yActual= raw_y;
+  const yPred  = useLog==='log' ? yhat.map(v=>Math.exp(v)) : yhat;
+  const medPPA = [...yActual].sort((a,b)=>a-b)[Math.floor(n/2)];
+
+  // Time trend: annualised change
+  const yearFrac  = dateRange / (1000*60*60*24*365);
+  const trendCoef = beta[3]; // per unit of 0–1 range
+  const annualPct = yearFrac>0 ? ((Math.exp(trendCoef/yearFrac)-1)*100) : 0;
+
+  // Build HTML
+  const depLabel = depVar==='price_per_acre' ? (useLog==='log'?'Ln(Price/Acre)':'Price/Acre') : (useLog==='log'?'Ln(Sale Price)':'Sale Price');
+
+  // Coef table rows
+  const coefRows = beta.map((b,i)=>{
+    const t  = tstat[i];
+    const p  = tPval(t, df);
+    const st = sigStars(p);
+    const sig= p<0.05;
+    const bFmt = useLog==='log' ? b.toFixed(4) : fmtFull(b).replace('$','');
+    const seFmt= useLog==='log' ? SE[i].toFixed(4) : fmtFull(SE[i]).replace('$','');
+    return `<tr>
+      <td class="${sig?'sig':'insig'}">${labels[i]}</td>
+      <td class="${sig?'sig':'insig'}">${bFmt}</td>
+      <td>${seFmt}</td>
+      <td>${t.toFixed(3)}</td>
+      <td>${p<0.001?'<0.001':p.toFixed(3)}</td>
+      <td style="color:var(--accent);font-weight:700">${st}</td>
+    </tr>`;
+  }).join('');
+
+  // Equation string
+  const eqParts = beta.map((b,i)=>{
+    if(i===0) return (useLog==='log'?b.toFixed(3):fmtFull(b));
+    const sign = b>=0?' + ':' - ';
+    const val  = useLog==='log'?Math.abs(b).toFixed(4):fmtFull(Math.abs(b));
+    return `${sign}${val}×${labels[i]}`;
+  });
+  const eqStr = `${depLabel} = ${eqParts.join('')}`;
+
+  document.getElementById('reg-sample-label').textContent = `n = ${n} sales`;
+
+  body.innerHTML = `
+    <div class="reg-section-title">Model Configuration</div>
+
+    <div class="reg-controls">
+      <div class="reg-ctrl-group">
+        <label>Dependent Variable</label>
+        <select id="reg-dep" onchange="runRegression()">
+          <option value="price_per_acre" ${depVar==='price_per_acre'?'selected':''}>Price per Acre</option>
+          <option value="total_price"    ${depVar==='total_price'?'selected':''}>Total Sale Price</option>
+        </select>
+      </div>
+      <div class="reg-ctrl-group">
+        <label>Transform</label>
+        <select id="reg-log" onchange="runRegression()">
+          <option value="log"    ${useLog==='log'?'selected':''}>Log (ln) — recommended</option>
+          <option value="linear" ${useLog==='linear'?'selected':''}>Linear (raw)</option>
+        </select>
+      </div>
+      <div class="reg-ctrl-group">
+        <label>Min Acres</label>
+        <input type="number" id="reg-min-ac" value="${minAcres}" step="0.1" min="0" onchange="runRegression()" style="width:80px">
+      </div>
+      <div class="reg-ctrl-group">
+        <label>Max Acres</label>
+        <input type="number" id="reg-max-ac" value="${maxAcres>=9999?'':maxAcres}" placeholder="No limit" step="1" min="0" onchange="runRegression()" style="width:80px">
+      </div>
+    </div>
+
+    <div class="reg-section-title" style="margin-top:4px">Model Fit</div>
+
+    <div class="reg-stat-grid">
+      <div class="reg-stat-box">
+        <div class="rsv">${(R2*100).toFixed(1)}%</div>
+        <div class="rsl">R²</div>
+      </div>
+      <div class="reg-stat-box">
+        <div class="rsv">${(adjR2*100).toFixed(1)}%</div>
+        <div class="rsl">Adj. R²</div>
+      </div>
+      <div class="reg-stat-box">
+        <div class="rsv">${Fstat.toFixed(1)}</div>
+        <div class="rsl">F-Statistic</div>
+      </div>
+      <div class="reg-stat-box">
+        <div class="rsv">${n}</div>
+        <div class="rsl">Observations</div>
+      </div>
+      <div class="reg-stat-box">
+        <div class="rsv">${fmtFull(medPPA)}</div>
+        <div class="rsl">Median $/Acre</div>
+      </div>
+      <div class="reg-stat-box">
+        <div class="rsv" style="color:${annualPct>=0?'var(--accent2)':'var(--danger)'}">${annualPct>=0?'+':''}${annualPct.toFixed(1)}%</div>
+        <div class="rsl">Annual Trend</div>
+      </div>
+      <div class="reg-stat-box">
+        <div class="rsv">${useLog==='log'?RMSE.toFixed(3):fmtFull(RMSE)}</div>
+        <div class="rsl">RMSE</div>
+      </div>
+      <div class="reg-stat-box">
+        <div class="rsv">${df}</div>
+        <div class="rsl">Degrees of Freedom</div>
+      </div>
+    </div>
+
+    <div class="reg-section-title" style="margin-top:4px">Regression Equation</div>
+    <div class="reg-eq-box">
+      <div class="reg-eq-label">Model</div>
+      ${eqStr}
+    </div>
+
+    <div class="reg-section-title" style="margin-top:4px">Coefficients</div>
+    <table class="reg-coef-table">
+      <thead><tr>
+        <th>Variable</th><th>Estimate</th><th>Std Error</th>
+        <th>t-value</th><th>p-value</th><th>Sig</th>
+      </tr></thead>
+      <tbody>${coefRows}</tbody>
+    </table>
+    <div style="font-family:'IBM Plex Mono',monospace;font-size:.56rem;color:var(--muted);grid-column:span 2;padding-top:4px">
+      Significance: *** p&lt;0.001 &nbsp; ** p&lt;0.01 &nbsp; * p&lt;0.05 &nbsp; · p&lt;0.1
+    </div>
+
+    <div class="reg-section-title" style="margin-top:4px">Residuals vs Fitted</div>
+    <div class="reg-chart-wrap" style="grid-column:span 2">
+      <canvas id="reg-canvas"></canvas>
+    </div>
+  `;
+
+  // Draw scatter: fitted vs residuals
+  requestAnimationFrame(()=>{
+    const canvas = document.getElementById('reg-canvas');
+    if(!canvas) return;
+    canvas.width  = canvas.offsetWidth  * window.devicePixelRatio;
+    canvas.height = canvas.offsetHeight * window.devicePixelRatio;
+    const ctx = canvas.getContext('2d');
+    ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
+    const W = canvas.offsetWidth, H = canvas.offsetHeight;
+    const PAD = {l:48,r:16,t:12,b:32};
+
+    const minX = Math.min(...yhat), maxX = Math.max(...yhat);
+    const minY = Math.min(...resid), maxY = Math.max(...resid);
+    const xRange = maxX-minX||1, yRange = (maxY-minY)||1;
+    const toX = v=>(v-minX)/xRange*(W-PAD.l-PAD.r)+PAD.l;
+    const toY = v=>H-PAD.b-(v-minY)/yRange*(H-PAD.t-PAD.b);
+
+    // Background grid
+    ctx.strokeStyle='#1f2736'; ctx.lineWidth=1;
+    for(let i=0;i<=4;i++){
+      const y=PAD.t+i*(H-PAD.t-PAD.b)/4;
+      ctx.beginPath();ctx.moveTo(PAD.l,y);ctx.lineTo(W-PAD.r,y);ctx.stroke();
+    }
+    // Zero line
+    const zeroY = toY(0);
+    ctx.strokeStyle='rgba(74,232,176,.4)';ctx.lineWidth=1.5;ctx.setLineDash([4,4]);
+    ctx.beginPath();ctx.moveTo(PAD.l,zeroY);ctx.lineTo(W-PAD.r,zeroY);ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Axes labels
+    ctx.fillStyle='#5a6478';ctx.font='10px IBM Plex Mono';ctx.textAlign='center';
+    ctx.fillText('Fitted Values',W/2,H-4);
+    ctx.save();ctx.translate(12,H/2);ctx.rotate(-Math.PI/2);
+    ctx.fillText('Residuals',0,0);ctx.restore();
+
+    // Points
+    yhat.forEach((fx,i)=>{
+      const px=toX(fx), py=toY(resid[i]);
+      const alpha = 0.6;
+      ctx.beginPath();
+      ctx.arc(px,py,3,0,Math.PI*2);
+      ctx.fillStyle=`rgba(232,200,74,${alpha})`;
+      ctx.fill();
+    });
+
+    // LOWESS-style smoothed trend (simple moving average)
+    const sorted = yhat.map((v,i)=>({x:v,y:resid[i]})).sort((a,b)=>a.x-b.x);
+    const bw = Math.max(5, Math.floor(sorted.length*0.2));
+    ctx.strokeStyle='rgba(232,74,74,.8)';ctx.lineWidth=1.5;
+    ctx.beginPath();
+    sorted.forEach((pt,i)=>{
+      const lo=Math.max(0,i-bw), hi=Math.min(sorted.length-1,i+bw);
+      const slice=sorted.slice(lo,hi+1);
+      const avgY=slice.reduce((s,p)=>s+p.y,0)/slice.length;
+      const px=toX(pt.x), py=toY(avgY);
+      i===0?ctx.moveTo(px,py):ctx.lineTo(px,py);
+    });
+    ctx.stroke();
+  });
+}
+
+// ── AUDITOR SITE HELPERS ──────────────────────────────────────────────────────
+function auditorOpen(parcel){
+  // Copy PIN to clipboard so user can paste immediately on the search page
+  navigator.clipboard.writeText(parcel).catch(()=>{});
+  window.open(
+    'https://property.franklincountyauditor.com/_web/search/commonsearch.aspx?mode=parid',
+    '_blank'
+  );
+  toast(`Parcel ${parcel} copied — paste into the search box`);
+}
+
+function auditorCopy(parcel, btn){
+  navigator.clipboard.writeText(parcel)
+    .then(()=>{
+      const orig = btn.textContent;
+      btn.textContent = '✓ Copied!';
+      btn.style.background = 'var(--accent2)';
+      btn.style.color = '#0c0e12';
+      setTimeout(()=>{ btn.textContent = orig; btn.style.background=''; btn.style.color='var(--accent2)'; }, 1800);
+    })
+    .catch(()=> toast('Copy failed — your browser may not support clipboard access'));
 }
 
 // ── INIT ──────────────────────────────────────────────────────────────────────
 // Set default "to" date to today
-document.getElementById('q-date-to').value = new Date().toISOString().slice(0,10);
+const _t = new Date();
+document.getElementById('q-date-to').value =
+  String(_t.getMonth()+1).padStart(2,'0')+'/'+String(_t.getDate()).padStart(2,'0')+'/'+_t.getFullYear();
 </script>
 </body>
 </html>
