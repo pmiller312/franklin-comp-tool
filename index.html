@@ -736,60 +736,124 @@ darkLayer.addTo(map);
 L.control.zoom({position:'topright'}).addTo(map);
 
 // ── FEMA NFHL FLOOD OVERLAY ───────────────────────────────────────────────────
-// Public domain, no API key. Layer 28 = Flood Hazard Zones (S_Fld_Haz_Ar)
-// FEMA NFHL — two separate base URLs: one for WMS tiles, one for REST identify
-const NFHL_WMS  = 'https://hazards.fema.gov/gis/nfhl/services/public/NFHLWMS/MapServer/WMSServer';
-const NFHL_REST = 'https://hazards.fema.gov/gis/nfhl/rest/services/public/NFHL/MapServer';
-const floodLayer = L.tileLayer.wms(NFHL_WMS, {
-  layers: '28',
-  format: 'image/png',
-  transparent: true,
-  version: '1.3.0',
-  opacity: 0.45,
-  attribution: 'FEMA National Flood Hazard Layer (NFHL) — Public Domain'
-});
-let floodOn = false;
+// Uses ArcGIS Online NFHL FeatureServer — CORS-enabled, no WMS, no dynamicMapLayer
+// hazards.fema.gov WMS/REST blocks cross-origin requests; ArcGIS Online does not
+const NFHL_FS = 'https://services.arcgis.com/P3ePLMYs2RVChkJx/arcgis/rest/services/NFHL_National_Public/FeatureServer/28/query';
+
+let floodOn       = false;
+let floodGeoLayer = null;
+let floodLoading  = false;
+
+function floodZoneColor(zone){
+  if(!zone) return '#aaaaaa';
+  const z = zone.toUpperCase();
+  if(['A','AE','AH','AO','AR','A99'].includes(z)) return '#5b9bd5';
+  if(['VE','V'].includes(z))                       return '#2e5fa3';
+  if(z === 'X')                                    return null;
+  if(['B','C'].includes(z))                        return '#c6d9f0';
+  return '#dddddd';
+}
+
+async function loadFloodZones(){
+  if(floodLoading) return;
+  floodLoading = true;
+  const btn = document.getElementById('flood-btn');
+  btn.textContent = '💧 Loading…';
+  if(floodGeoLayer){ map.removeLayer(floodGeoLayer); floodGeoLayer = null; }
+
+  const b = map.getBounds().pad(0.05);
+  const params = new URLSearchParams({
+    geometry: `${b.getWest()},${b.getSouth()},${b.getEast()},${b.getNorth()}`,
+    geometryType: 'esriGeometryEnvelope',
+    inSR: '4326', outSR: '4326',
+    spatialRel: 'esriSpatialRelIntersects',
+    outFields: 'FLD_ZONE,ZONE_SUBTY,SFHA_TF,STATIC_BFE',
+    returnGeometry: 'true',
+    where: "FLD_ZONE <> 'OPEN WATER'",
+    resultRecordCount: 1000,
+    f: 'geojson'
+  });
+
+  try {
+    const resp = await fetch(NFHL_FS + '?' + params);
+    if(!resp.ok) throw new Error('HTTP ' + resp.status);
+    const data = await resp.json();
+    if(!data.features?.length){ toast('No flood zones found in view'); floodLoading=false; btn.textContent='💧 Flood ON'; return; }
+
+    floodGeoLayer = L.geoJSON(data, {
+      style: function(f){
+        const color = floodZoneColor(f.properties?.FLD_ZONE);
+        if(!color) return { fillOpacity:0, weight:1, color:'#888', opacity:0.3 };
+        return { fillColor:color, fillOpacity:0.45, weight:1.5, color:color, opacity:0.9 };
+      },
+      onEachFeature: function(f, layer){
+        const p = f.properties || {};
+        const sfha = p.SFHA_TF === 'T';
+        const bfe  = p.STATIC_BFE > 0 ? p.STATIC_BFE + ' ft' : '—';
+        layer.bindPopup(
+          `<b style="color:${sfha?'#e84a4a':'#4ae8b0'}">Zone ${p.FLD_ZONE||'—'}${sfha?' ⚠ SFHA':''}</b><br>` +
+          `${p.ZONE_SUBTY?p.ZONE_SUBTY+'<br>':''}BFE: ${bfe}<br>` +
+          `<span style="font-size:.75em;color:#888">FEMA NFHL — Public Domain</span>`
+        );
+      }
+    }).addTo(map);
+    markerLayer.addTo(map);
+    btn.textContent = '💧 Flood ON';
+    toast(`${data.features.length} flood zone polygons loaded`);
+  } catch(e){
+    console.error('Flood fetch error:', e);
+    toast('⚠ FEMA flood unavailable: ' + e.message, true);
+    floodOn = false;
+    btn.classList.remove('active');
+    btn.textContent = '💧 FEMA Flood';
+  }
+  floodLoading = false;
+}
+
+let _floodMoveTimer = null;
+function onFloodMoveEnd(){
+  clearTimeout(_floodMoveTimer);
+  _floodMoveTimer = setTimeout(() => { if(floodOn) loadFloodZones(); }, 800);
+}
 
 function toggleFlood(){
   floodOn = !floodOn;
   const btn = document.getElementById('flood-btn');
   if(floodOn){
-    floodLayer.addTo(map);
     btn.classList.add('active');
-    btn.textContent = '💧 Flood ON';
-    toast('FEMA NFHL flood zones overlay active');
+    loadFloodZones();
+    map.on('moveend', onFloodMoveEnd);
   } else {
-    map.removeLayer(floodLayer);
+    if(floodGeoLayer){ map.removeLayer(floodGeoLayer); floodGeoLayer = null; }
     btn.classList.remove('active');
     btn.textContent = '💧 FEMA Flood';
+    map.off('moveend', onFloodMoveEnd);
   }
 }
 
-// Query NFHL for flood zone at a lat/lng point
+// Query flood zone for a point (popup) — also via ArcGIS Online FeatureServer
 async function queryFloodZone(lat, lng){
   try {
     const params = new URLSearchParams({
       geometry: `${lng},${lat}`,
       geometryType: 'esriGeometryPoint',
-      inSR: '4326',
-      layers: 'all:28',
-      tolerance: 2,
-      mapExtent: `${lng-0.001},${lat-0.001},${lng+0.001},${lat+0.001}`,
-      imageDisplay: '800,800,96',
+      inSR: '4326', outSR: '4326',
+      spatialRel: 'esriSpatialRelIntersects',
+      outFields: 'FLD_ZONE,ZONE_SUBTY,SFHA_TF,STATIC_BFE',
       returnGeometry: 'false',
-      f: 'json'
+      f: 'json',
+      resultRecordCount: 1
     });
-    const r = await fetch(`${NFHL_REST}/identify?${params}`);
+    const r = await fetch(NFHL_FS + '?' + params);
     if(!r.ok) return null;
     const data = await r.json();
-    const hit = data.results?.[0]?.attributes;
+    const hit = data.features?.[0]?.attributes;
     if(!hit) return null;
     return {
-      zone:    hit.FLD_ZONE || hit.ZONE || '',
+      zone:    hit.FLD_ZONE || '',
       subtype: hit.ZONE_SUBTY || '',
       sfha:    hit.SFHA_TF === 'T',
-      bfe:     hit.STATIC_BFE > 0 ? hit.STATIC_BFE + ' ft' : '',
-      panel:   hit.FIRM_PAN || ''
+      bfe:     hit.STATIC_BFE > 0 ? hit.STATIC_BFE + ' ft' : ''
     };
   } catch(e){ return null; }
 }
