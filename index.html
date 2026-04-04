@@ -837,42 +837,65 @@ async function queryFloodZone(lat, lng){
 }
 
 // Franklin County Recorder deed search URL
-function recorderUrl(ownerName, saleDateISO){
-  const cleaned = (ownerName||'').trim().replace(/\s+(LLC|INC|CORP|LTD|LP|LLP|TR|TRUST|ET AL)\.?$/i,'').trim();
-  if(!cleaned) return 'https://franklin.oh.publicsearch.us/';
-  const parties = JSON.stringify({ grantor: [{ term: cleaned, types: ['grantor'] }] });
+function recorderUrl(ownerName, saleTs){
+  // Use last name only for search term — recorder exact-matches full names
+  // but last name alone reliably finds records. Date range narrows results.
+  const raw = (ownerName||'').trim();
+  if(!raw) return 'https://franklin.oh.publicsearch.us/';
+
+  // Extract search term: last name only for individuals, full name for businesses
+  // Business indicators: contains digits, or name has no space after stripping known suffixes
+  const isBusiness = /\d/.test(raw) || /^(THE\s|CITY\s|COUNTY\s|STATE\s|BOARD\s)/i.test(raw) || /\s+(LLC|INC|CORP|LTD|LP|LLP)\.?$/i.test(raw);
+  let searchTerm;
+  if(isBusiness){
+    // For businesses: strip trailing legal suffixes and roman numerals, keep first two meaningful words
+    // Strip only the legal entity suffix at the end (LLC, INC, etc.), keep the business name
+    const stripped = raw
+      .replace(/\s+(LLC|L\.L\.C\.?|INC\.?|CORP\.?|LTD\.?|L\.P\.?|LLP\.?|CO\.)$/i,'')
+      .trim();
+    const words = stripped.split(/\s+/).filter(Boolean);
+    searchTerm = words.slice(0, 2).join(' '); // first two words gives good specificity
+    if(!searchTerm) searchTerm = raw.split(' ')[0];
+  } else {
+    // Individual: use last name (first word) only — recorder exact-matches full names
+    // but last name reliably finds all records for that person
+    searchTerm = raw.split(' ')[0];
+  }
+
+  const parties = JSON.stringify({ grantor: [{ term: searchTerm, types: ['grantor'] }] });
+
+  // Date range: ±10 days from sale date, end capped at today
   let dateRange = '';
-  if(saleDateISO){
-    const d = new Date(saleDateISO);
+  if(saleTs){
+    const d = new Date(saleTs);
     if(!isNaN(d)){
       const start = new Date(d); start.setDate(start.getDate() - 10);
       let   end   = new Date(d); end.setDate(end.getDate()   + 10);
       const today = new Date();
-      if(end > today) end = today;           // cap at today if +10 days hasn't happened yet
+      if(end > today) end = today;
       const fmt = dt => dt.getFullYear().toString()
         + String(dt.getMonth()+1).padStart(2,'0')
         + String(dt.getDate()).padStart(2,'0');
       dateRange = '&recordedDateRange=' + fmt(start) + '%2C' + fmt(end);
     }
   }
+
   return 'https://franklin.oh.publicsearch.us/results?department=RP'
     + '&parties=' + encodeURIComponent(parties)
     + dateRange
     + '&searchType=advancedSearch';
 }
 
-function recorderLabel(saleDateISO){
-  if(!saleDateISO) return '🔗 Deed search';
-  const d = new Date(saleDateISO);
+function recorderLabel(saleTs){
+  if(!saleTs) return '🔗 Deed search';
+  const d = new Date(saleTs);
   if(isNaN(d)) return '🔗 Deed search';
   const start = new Date(d); start.setDate(start.getDate()-10);
   let   end   = new Date(d); end.setDate(end.getDate()+10);
   const today = new Date();
   if(end > today) end = today;
   const mo = n => ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][n];
-  const startStr = `${mo(start.getMonth())} ${String(start.getDate())}`;
-  const endStr   = `${mo(end.getMonth())} ${String(end.getDate())}`;
-  return `🔗 Deed (${startStr}–${endStr} ${end.getFullYear()})`;
+  return `🔗 Deed (${mo(start.getMonth())} ${start.getDate()}–${mo(end.getMonth())} ${end.getDate()} ${end.getFullYear()})`;
 }
 
 // Flood zone label helper
