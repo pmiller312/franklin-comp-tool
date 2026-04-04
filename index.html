@@ -332,6 +332,172 @@ table.sg td.td-muted{color:var(--muted);}
 canvas#reg-canvas{width:100%;height:100%;}
 
 .reg-empty{grid-column:span 2;text-align:center;padding:30px;color:var(--muted);font-family:'IBM Plex Mono',monospace;font-size:.7rem;}
+
+/* ══════════════════════════════════════════════════════
+   MOBILE LAYOUT
+   Applied when .mobile-mode class is on <body>
+   ══════════════════════════════════════════════════════ */
+body.mobile-mode {
+  overflow: hidden;
+}
+
+/* Mobile app: header + map + tab bar. No grid sidebar. */
+body.mobile-mode .app {
+  grid-template-rows: 44px 1fr 52px;
+  height: 100dvh;
+}
+
+/* Compact header */
+body.mobile-mode header {
+  padding: 0 10px;
+}
+body.mobile-mode .logo {
+  font-size: 1.1rem;
+}
+body.mobile-mode .header-right {
+  gap: 6px;
+}
+body.mobile-mode .reg-btn {
+  font-size: .55rem;
+  padding: 4px 8px;
+}
+
+/* Desktop sidebar hidden; mobile uses a bottom sheet */
+body.mobile-mode .main {
+  display: block;
+  position: relative;
+  overflow: hidden;
+}
+body.mobile-mode .sidebar {
+  display: none;
+}
+body.mobile-mode .right-pane {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+body.mobile-mode .map-wrap {
+  flex: 1;
+  min-height: 0;
+}
+
+/* Grid pane hidden on mobile by default */
+body.mobile-mode .grid-pane {
+  display: none;
+}
+
+/* ── BOTTOM SHEET ── */
+.mob-sheet {
+  position: fixed;
+  bottom: 52px; /* above tab bar */
+  left: 0; right: 0;
+  z-index: 2000;
+  background: var(--panel);
+  border-top: 2px solid var(--accent);
+  border-radius: 14px 14px 0 0;
+  max-height: 75dvh;
+  display: flex;
+  flex-direction: column;
+  transform: translateY(100%);
+  transition: transform .3s ease;
+  will-change: transform;
+}
+.mob-sheet.open {
+  transform: translateY(0);
+}
+.mob-sheet-handle {
+  width: 36px; height: 4px;
+  background: var(--border);
+  border-radius: 2px;
+  margin: 8px auto 4px;
+  flex-shrink: 0;
+}
+.mob-sheet-title {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: .62rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: .1em;
+  padding: 0 14px 6px;
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--border);
+}
+.mob-sheet-body {
+  flex: 1;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.mob-sheet-body::-webkit-scrollbar { display: none; }
+
+/* ── TAB BAR ── */
+.mob-tab-bar {
+  display: none;
+}
+body.mobile-mode .mob-tab-bar {
+  display: flex;
+  position: fixed;
+  bottom: 0; left: 0; right: 0;
+  height: 52px;
+  background: var(--panel);
+  border-top: 1px solid var(--border);
+  z-index: 3000;
+}
+.mob-tab {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  cursor: pointer;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: .5rem;
+  letter-spacing: .04em;
+  transition: color .15s;
+  -webkit-tap-highlight-color: transparent;
+}
+.mob-tab .mob-tab-icon {
+  font-size: 1.1rem;
+  line-height: 1;
+}
+.mob-tab.active {
+  color: var(--accent);
+}
+.mob-tab.active .mob-tab-icon {
+  color: var(--accent);
+}
+
+/* ── MOBILE MAP BUTTONS ── */
+body.mobile-mode .aerial-btn {
+  top: 8px; right: 44px;
+  font-size: .55rem;
+  padding: 4px 7px;
+}
+body.mobile-mode .flood-btn {
+  top: 8px; right: 130px;
+  font-size: .55rem;
+  padding: 4px 7px;
+}
+body.mobile-mode .leaflet-control-zoom {
+  margin-top: 8px !important;
+  margin-right: 6px !important;
+}
+
+/* Mobile result items slightly larger touch targets */
+body.mobile-mode .result-item {
+  padding: 11px 14px;
+}
+
+/* Mobile query panel padding */
+body.mobile-mode .query-panel {
+  padding: 10px 14px 6px;
+}
+body.mobile-mode .field-row {
+  margin-bottom: 10px;
+}
 </style>
 </head>
 <body>
@@ -1500,6 +1666,7 @@ function render(){
   updateStats(filtered);
   updateList(filtered);
   renderGrid();
+  mobRefreshSheet();
   document.getElementById('results-header').textContent =
     `${filtered.length.toLocaleString()} of ${allSales.length.toLocaleString()} sales`;
 }
@@ -2493,11 +2660,123 @@ async function buildAndDownloadDocx(comps){
   URL.revokeObjectURL(url);
 }
 
+
+// ── MOBILE LAYOUT ─────────────────────────────────────────────────────────────
+const IS_MOBILE = ('ontouchstart' in window || navigator.maxTouchPoints > 0) && window.innerWidth < 900;
+
+if(IS_MOBILE){
+  document.body.classList.add('mobile-mode');
+}
+
+let _mobActiveTab = 'map';
+
+function mobTab(tab){
+  if(!IS_MOBILE) return;
+  _mobActiveTab = tab;
+
+  // Update tab active states
+  ['map','filter','results','grid'].forEach(t => {
+    document.getElementById('mob-tab-' + t)?.classList.toggle('active', t === tab);
+  });
+
+  const sheet = document.getElementById('mob-sheet');
+  const title = document.getElementById('mob-sheet-title');
+  const sheetBody = document.getElementById('mob-sheet-body');
+
+  if(tab === 'map'){
+    sheet.classList.remove('open');
+    // Return sidebar children to sidebar (in case they were moved)
+    const sidebar  = document.querySelector('.sidebar');
+    const queryPanel = document.getElementById('mob-query-slot');
+    const resultsSlot = document.getElementById('mob-results-slot');
+    return;
+  }
+
+  sheet.classList.add('open');
+
+  // Move actual live DOM elements into sheet — preserves event listeners and reactivity
+  if(tab === 'filter'){
+    title.textContent = 'Query Filters';
+    sheetBody.innerHTML = '';
+    // Move the real sidebar into the sheet body
+    const sidebar = document.querySelector('.sidebar');
+    if(sidebar) sheetBody.appendChild(sidebar);
+  }
+
+  if(tab === 'results'){
+    title.textContent = 'Results (' + (typeof allSales !== 'undefined' ? allSales.length : 0) + ')';
+    sheetBody.innerHTML = '';
+    // Move filter chips + results list into sheet
+    const filterBar = document.getElementById('filter-bar');
+    const resHeader = document.getElementById('results-header')?.parentElement;
+    const resList   = document.getElementById('results-list');
+    const statsBar  = document.querySelector('.stats-bar');
+    if(statsBar)  sheetBody.appendChild(statsBar);
+    if(filterBar) sheetBody.appendChild(filterBar);
+    if(resHeader) sheetBody.appendChild(resHeader);
+    if(resList)   sheetBody.appendChild(resList);
+  }
+
+  if(tab === 'grid'){
+    title.textContent = 'Sales Grid';
+    sheetBody.innerHTML = '';
+    const gridScroll = document.querySelector('.grid-scroll');
+    const gridCount  = document.getElementById('grid-count');
+    const hdr = document.createElement('div');
+    hdr.style.cssText = 'padding:6px 12px;font-family:"IBM Plex Mono",monospace;font-size:.58rem;color:var(--muted);border-bottom:1px solid var(--border);flex-shrink:0;';
+    hdr.textContent = gridCount?.textContent || 'Sales Grid';
+    sheetBody.appendChild(hdr);
+    if(gridScroll){
+      gridScroll.style.cssText = 'overflow-x:auto;overflow-y:auto;-webkit-overflow-scrolling:touch;';
+      sheetBody.appendChild(gridScroll);
+    }
+  }
+}
+
+// On mobile, tapping the map closes the sheet
+if(IS_MOBILE){
+  document.getElementById('map')?.addEventListener('click', () => {
+    if(_mobActiveTab !== 'map') mobTab('map');
+  });
+
+  // After data loads, auto-refresh results tab content
+  const _origRender = typeof render !== 'undefined' ? render : null;
+}
+
+// Re-render sheet content when results update (mobile)
+function mobRefreshSheet(){
+  if(!IS_MOBILE) return;
+  if(_mobActiveTab !== 'map') mobTab(_mobActiveTab);
+}
+
 // ── INIT ──────────────────────────────────────────────────────────────────────
 // Set default "to" date to today
 const _t = new Date();
 document.getElementById('q-date-to').value =
   String(_t.getMonth()+1).padStart(2,'0')+'/'+String(_t.getDate()).padStart(2,'0')+'/'+_t.getFullYear();
 </script>
+<!-- ── MOBILE TAB BAR ── -->
+<div class="mob-tab-bar" id="mob-tab-bar">
+  <button class="mob-tab active" id="mob-tab-map"    onclick="mobTab('map')">
+    <span class="mob-tab-icon">🗺</span><span>Map</span>
+  </button>
+  <button class="mob-tab"        id="mob-tab-filter" onclick="mobTab('filter')">
+    <span class="mob-tab-icon">🔍</span><span>Filters</span>
+  </button>
+  <button class="mob-tab"        id="mob-tab-results" onclick="mobTab('results')">
+    <span class="mob-tab-icon">📋</span><span>Results</span>
+  </button>
+  <button class="mob-tab"        id="mob-tab-grid"   onclick="mobTab('grid')">
+    <span class="mob-tab-icon">⊞</span><span>Grid</span>
+  </button>
+</div>
+
+<!-- ── MOBILE BOTTOM SHEET ── -->
+<div class="mob-sheet" id="mob-sheet">
+  <div class="mob-sheet-handle"></div>
+  <div class="mob-sheet-title" id="mob-sheet-title">Filters</div>
+  <div class="mob-sheet-body"  id="mob-sheet-body"></div>
+</div>
+
 </body>
 </html>
