@@ -32,6 +32,8 @@ header{
 .freshness strong{color:var(--accent2);}
 
 .main{display:grid;grid-template-columns:300px 1fr;overflow:hidden;}
+.right-pane{display:flex;flex-direction:column;overflow:hidden;min-height:0;}
+.map-wrap{flex:1;position:relative;min-height:0;}
 
 /* ── SIDEBAR ── */
 .sidebar{background:var(--panel);border-right:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden;}
@@ -98,7 +100,6 @@ select:focus,input:focus{border-color:var(--accent);}
 .result-sub{font-size:.62rem;color:var(--muted);margin-top:1px;}
 
 /* ── MAP ── */
-.map-wrap{position:relative;}
 #map{width:100%;height:100%;}
 
 /* Legend */
@@ -122,6 +123,81 @@ select:focus,input:focus{border-color:var(--accent);}
 .aerial-btn.active{background:var(--accent);color:#0c0e12;border-color:var(--accent);font-weight:700;}
 
 /* Comp selection */
+/* ── SALES GRID ── */
+.grid-pane{
+  height:260px;flex-shrink:0;display:flex;flex-direction:column;
+  border-top:2px solid var(--accent);background:var(--panel);
+  overflow:hidden;
+  /* transition only when not dragging */
+}
+.grid-pane.animating{transition:height .25s ease;}
+.grid-pane.collapsed{height:32px;}
+.grid-resize-handle{
+  height:6px;flex-shrink:0;cursor:ns-resize;
+  background:var(--panel);border-top:1px solid var(--border);
+  display:flex;align-items:center;justify-content:center;
+  transition:background .15s;
+}
+.grid-resize-handle:hover,.grid-resize-handle.dragging{background:#1a2030;}
+.grid-resize-handle::after{
+  content:'';display:block;width:32px;height:3px;
+  border-radius:2px;background:var(--border);
+}
+.grid-resize-handle:hover::after,.grid-resize-handle.dragging::after{background:var(--accent);}
+.grid-header{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:0 8px 0 12px;height:32px;flex-shrink:0;
+  background:var(--panel);border-bottom:1px solid var(--border);
+  font-family:'IBM Plex Mono',monospace;font-size:.6rem;
+  color:var(--muted);letter-spacing:.08em;text-transform:uppercase;
+}
+.grid-size-btns{display:flex;gap:3px;align-items:center;}
+.grid-size-btn{
+  background:transparent;border:1px solid var(--border);color:var(--muted);
+  border-radius:2px;cursor:pointer;font-family:'IBM Plex Mono',monospace;
+  font-size:.55rem;padding:2px 6px;transition:all .12s;
+}
+.grid-size-btn:hover,.grid-size-btn.active{border-color:var(--accent);color:var(--accent);}
+.grid-toggle{
+  background:transparent;border:none;color:var(--muted);
+  cursor:pointer;font-size:.9rem;padding:2px 6px;
+  transition:color .15s;
+}
+.grid-toggle:hover{color:var(--accent);}
+.grid-scroll{flex:1;overflow-y:auto;overflow-x:auto;}
+.grid-scroll::-webkit-scrollbar{height:4px;width:4px;}
+.grid-scroll::-webkit-scrollbar-thumb{background:var(--border);}
+table.sg{
+  width:100%;border-collapse:collapse;
+  font-family:'IBM Plex Mono',monospace;font-size:.62rem;
+  white-space:nowrap;
+}
+table.sg thead th{
+  position:sticky;top:0;z-index:2;
+  background:#0d1118;padding:5px 10px;text-align:left;
+  color:var(--muted);font-size:.58rem;text-transform:uppercase;
+  letter-spacing:.06em;border-bottom:1px solid var(--border);
+  cursor:pointer;user-select:none;
+}
+table.sg thead th:hover{color:var(--accent);}
+table.sg thead th.sort-asc::after{content:' ▲';color:var(--accent);}
+table.sg thead th.sort-desc::after{content:' ▼';color:var(--accent);}
+table.sg tbody tr{
+  border-bottom:1px solid rgba(31,39,54,.6);
+  cursor:pointer;transition:background .1s;
+}
+table.sg tbody tr:hover{background:rgba(232,200,74,.04);}
+table.sg tbody tr.sg-selected{background:rgba(74,232,176,.1);outline:1px solid var(--accent2);}
+table.sg tbody tr.sg-flagged td:first-child{border-left:2px solid #e84ab0;}
+table.sg td{padding:4px 10px;color:var(--text);}
+table.sg td.td-price{color:var(--accent);font-weight:600;}
+table.sg td.td-razed{color:#e84ab0;}
+table.sg td.td-muted{color:var(--muted);}
+.sg-check{
+  width:14px;height:14px;accent-color:var(--accent2);cursor:pointer;
+  flex-shrink:0;
+}
+
 .sel-bar{
   position:fixed;bottom:24px;left:50%;transform:translateX(-50%);z-index:9000;
   background:var(--panel);border:2px solid var(--accent2);border-radius:6px;
@@ -141,10 +217,11 @@ select:focus,input:focus{border-color:var(--accent);}
 }
 .sel-slot.filled{border-color:var(--accent2);background:var(--accent2);color:#0c0e12;font-weight:700;}
 .sel-slot.filled:hover{background:#e84a4a;border-color:#e84a4a;color:#fff;cursor:pointer;}
+/* btn-generate matches .btn .btn-fetch visually */
 .btn-generate{
-  padding:7px 16px;background:var(--accent2);color:#0c0e12;border:none;
-  border-radius:3px;cursor:pointer;font-family:'IBM Plex Mono',monospace;
-  font-size:.68rem;font-weight:700;letter-spacing:.06em;white-space:nowrap;
+  padding:7px 14px;background:var(--accent2);color:#0c0e12;border:none;
+  border-radius:2px;cursor:pointer;font-family:'IBM Plex Mono',monospace;
+  font-size:.68rem;font-weight:700;letter-spacing:.06em;
   transition:all .15s;
 }
 .btn-generate:hover{background:#3dd4a0;}
@@ -254,6 +331,7 @@ canvas#reg-canvas{width:100%;height:100%;}
   <div class="logo">Franklin County <span>Vacant Land</span> Sales</div>
   <div class="header-right">
     <div class="freshness" id="freshness-tag">No data loaded</div>
+    <button class="reg-btn" id="hdr-gen-btn" onclick="generateSalesSheet()" disabled>⬇ Generate Sales Sheet</button>
     <button class="reg-btn" id="reg-btn" onclick="toggleRegression()" disabled>📈 Regression Analysis</button>
   </div>
 </header>
@@ -489,6 +567,8 @@ canvas#reg-canvas{width:100%;height:100%;}
     <div class="results-list" id="results-list"></div>
   </div>
 
+  <!-- RIGHT PANE: map + grid -->
+  <div class="right-pane">
   <!-- MAP -->
   <div class="map-wrap">
     <div id="map"></div>
@@ -524,6 +604,45 @@ canvas#reg-canvas{width:100%;height:100%;}
   </div>
 </div>
 </div>
+
+  <!-- SALES GRID PANE -->
+  <div class="grid-resize-handle" id="grid-resize-handle" title="Drag to resize grid"></div>
+  <div class="grid-pane" id="grid-pane">
+    <div class="grid-header">
+      <span id="grid-count">Run query to populate grid</span>
+      <div style="display:flex;align-items:center;gap:8px;">
+        <span style="color:var(--muted);font-size:.54rem;">☑ to select comp · header to sort</span>
+        <div class="grid-size-btns">
+          <button class="grid-size-btn" onclick="setGridSize(120)" title="Small">S</button>
+          <button class="grid-size-btn active" onclick="setGridSize(260)" title="Medium">M</button>
+          <button class="grid-size-btn" onclick="setGridSize(420)" title="Large">L</button>
+          <button class="grid-size-btn" onclick="setGridSize(600)" title="Full">XL</button>
+        </div>
+        <button class="grid-toggle" id="grid-toggle" onclick="toggleGrid()" title="Collapse/expand grid">▼</button>
+      </div>
+    </div>
+    <div class="grid-scroll">
+      <table class="sg" id="sg-table">
+        <thead>
+          <tr>
+            <th style="width:28px;text-align:center;cursor:default;"></th>
+            <th onclick="sortGrid('address')">Address</th>
+            <th onclick="sortGrid('sale_date')">Date</th>
+            <th onclick="sortGrid('sale_price')">Price</th>
+            <th onclick="sortGrid('acres')">Acres</th>
+            <th onclick="sortGrid('ppa')">$/Acre</th>
+            <th onclick="sortGrid('class_desc')">Class</th>
+            <th onclick="sortGrid('district')">District</th>
+            <th onclick="sortGrid('impv_value')">Impv $</th>
+            <th onclick="sortGrid('razed_score')" title="Razed/Redeveloped site score">🔥</th>
+          </tr>
+        </thead>
+        <tbody id="sg-body"></tbody>
+      </table>
+    </div>
+  </div>
+
+  </div><!-- end right-pane -->
 
 <div class="toast" id="toast"></div>
 
@@ -919,6 +1038,7 @@ function processResults(features, dateFrom, dateTo){
 
   toast(`✓ Loaded ${allSales.length.toLocaleString()} real sales`);
   document.getElementById('reg-btn').disabled = false;
+  document.getElementById('hdr-gen-btn').disabled = false;
   document.getElementById('sel-mode-btn').disabled = false;
 }
 
@@ -1168,6 +1288,7 @@ function render(){
 
   updateStats(filtered);
   updateList(filtered);
+  renderGrid();
   document.getElementById('results-header').textContent =
     `${filtered.length.toLocaleString()} of ${allSales.length.toLocaleString()} sales`;
 }
@@ -1229,6 +1350,7 @@ function clearData(){
   document.getElementById('freshness-tag').textContent = 'No data loaded';
   document.getElementById('source-badge').innerHTML = '<span class="warn">⚠ No data loaded</span><br>Set filters and click <strong>Fetch Live Data</strong>';
   document.getElementById('reg-btn').disabled = true;
+  document.getElementById('hdr-gen-btn').disabled = true;
   document.getElementById('sel-mode-btn').disabled = true;
   selModeOn = false;
   document.getElementById('sel-mode-btn').classList.remove('active');
@@ -1574,6 +1696,220 @@ function runRegression(){
   });
 }
 
+
+// ── SALES GRID ────────────────────────────────────────────────────────────────
+let gridSortCol = 'sale_date';
+let gridSortDir = -1; // -1 = desc, 1 = asc
+let gridCollapsed = false;
+
+function setGridSize(px, skipActive){
+  const pane = document.getElementById('grid-pane');
+  gridCollapsed = false;
+  pane.classList.add('animating');
+  pane.classList.remove('collapsed');
+  pane.style.height = px + 'px';
+  document.getElementById('grid-toggle').textContent = '▼';
+  setTimeout(() => pane.classList.remove('animating'), 280);
+  // Update active size button
+  if(!skipActive){
+    document.querySelectorAll('.grid-size-btn').forEach(b => {
+      b.classList.toggle('active', parseInt(b.getAttribute('onclick').match(/\d+/)[0]) === px);
+    });
+  }
+  // Force Leaflet to recalc map size
+  setTimeout(() => map.invalidateSize(), 50);
+}
+
+function toggleGrid(){
+  const pane = document.getElementById('grid-pane');
+  const btn  = document.getElementById('grid-toggle');
+  gridCollapsed = !gridCollapsed;
+  pane.classList.add('animating');
+  pane.classList.toggle('collapsed', gridCollapsed);
+  btn.textContent = gridCollapsed ? '▲' : '▼';
+  setTimeout(() => pane.classList.remove('animating'), 280);
+  setTimeout(() => map.invalidateSize(), 50);
+}
+
+// ── Drag-to-resize ─────────────────────────────────────────────────────────
+(function(){
+  const handle = document.getElementById('grid-resize-handle');
+  const pane   = document.getElementById('grid-pane');
+  if(!handle || !pane) return;
+
+  let dragging = false, startY = 0, startH = 0;
+  const MIN_H = 32, MAX_H = 700;
+
+  handle.addEventListener('mousedown', e => {
+    dragging = true;
+    startY = e.clientY;
+    startH = pane.offsetHeight;
+    handle.classList.add('dragging');
+    document.body.style.cursor = 'ns-resize';
+    document.body.style.userSelect = 'none';
+    e.preventDefault();
+  });
+
+  document.addEventListener('mousemove', e => {
+    if(!dragging) return;
+    // Dragging up = bigger grid (delta is negative when moving up)
+    const delta = startY - e.clientY;
+    const newH  = Math.min(MAX_H, Math.max(MIN_H, startH + delta));
+    pane.style.height = newH + 'px';
+    if(newH <= MIN_H + 4){
+      pane.classList.add('collapsed');
+      document.getElementById('grid-toggle').textContent = '▲';
+      gridCollapsed = true;
+    } else {
+      pane.classList.remove('collapsed');
+      document.getElementById('grid-toggle').textContent = '▼';
+      gridCollapsed = false;
+    }
+    // Clear active size btn while dragging
+    document.querySelectorAll('.grid-size-btn').forEach(b => b.classList.remove('active'));
+  });
+
+  document.addEventListener('mouseup', () => {
+    if(!dragging) return;
+    dragging = false;
+    handle.classList.remove('dragging');
+    document.body.style.cursor = '';
+    document.body.style.userSelect = '';
+    map.invalidateSize();
+  });
+
+  // Touch support
+  handle.addEventListener('touchstart', e => {
+    dragging = true;
+    startY = e.touches[0].clientY;
+    startH = pane.offsetHeight;
+    handle.classList.add('dragging');
+    e.preventDefault();
+  }, { passive: false });
+
+  document.addEventListener('touchmove', e => {
+    if(!dragging) return;
+    const delta = startY - e.touches[0].clientY;
+    const newH  = Math.min(MAX_H, Math.max(MIN_H, startH + delta));
+    pane.style.height = newH + 'px';
+    e.preventDefault();
+  }, { passive: false });
+
+  document.addEventListener('touchend', () => {
+    if(!dragging) return;
+    dragging = false;
+    handle.classList.remove('dragging');
+    map.invalidateSize();
+  });
+})();
+
+function sortGrid(col){
+  if(gridSortCol === col) gridSortDir *= -1;
+  else { gridSortCol = col; gridSortDir = -1; }
+  // Update header classes
+  document.querySelectorAll('table.sg thead th').forEach(th => {
+    th.classList.remove('sort-asc','sort-desc');
+  });
+  const idx = ['','address','sale_date','sale_price','acres','ppa','class_desc','district','impv_value','razed_score'];
+  const th = document.querySelectorAll('table.sg thead th')[idx.indexOf(col)];
+  if(th) th.classList.add(gridSortDir === 1 ? 'sort-asc' : 'sort-desc');
+  renderGrid();
+}
+
+function renderGrid(){
+  const filtered = getFiltered();
+  const tbody = document.getElementById('sg-body');
+  if(!tbody) return;
+
+  // Add computed ppa for sorting
+  const rows = filtered.map(s => ({ ...s, ppa: s.acres > 0 ? s.sale_price / s.acres : 0 }));
+
+  // Sort
+  rows.sort((a, b) => {
+    let av = a[gridSortCol], bv = b[gridSortCol];
+    if(typeof av === 'string') av = av.toLowerCase();
+    if(typeof bv === 'string') bv = bv.toLowerCase();
+    if(av < bv) return -gridSortDir;
+    if(av > bv) return gridSortDir;
+    return 0;
+  });
+
+  // Update count
+  const countEl = document.getElementById('grid-count');
+  if(countEl) countEl.textContent = `${rows.length.toLocaleString()} sales`;
+
+  // Build rows
+  tbody.innerHTML = '';
+  rows.forEach(s => {
+    const isSelected = typeof selectedComps !== 'undefined' && selectedComps.some(c => c.parcel === s.parcel);
+    const tr = document.createElement('tr');
+    if(isSelected) tr.classList.add('sg-selected');
+    if(s.razed_flag) tr.classList.add('sg-flagged');
+
+    const ppa = s.acres > 0 ? '$' + Math.round(s.sale_price / s.acres).toLocaleString() : '—';
+    const impv = s.impv_value > 0 ? '$' + s.impv_value.toLocaleString() : '$0';
+    const dateStr = fmtDate(s.sale_date);
+    const cls = (s.class_desc || s.class_cd || '').slice(0, 22);
+    const dist = (s.district || '').slice(0, 18);
+
+    tr.innerHTML = `
+      <td style="text-align:center;padding:4px 6px;">
+        <input type="checkbox" class="sg-check" ${isSelected ? 'checked' : ''}
+          onclick="event.stopPropagation(); sgToggleComp('${s.parcel}', this)"
+          title="Select as comp">
+      </td>
+      <td>${s.razed_flag ? '🔥 ' : ''}${s.address || s.parcel}</td>
+      <td class="td-muted">${dateStr}</td>
+      <td class="td-price">${fmtFull(s.sale_price)}</td>
+      <td class="td-muted">${s.acres || '—'}</td>
+      <td>${ppa}</td>
+      <td class="td-muted">${cls}</td>
+      <td class="td-muted">${dist}</td>
+      <td class="${s.impv_value > 0 ? 'td-razed' : 'td-muted'}">${impv}</td>
+      <td style="text-align:center">${s.razed_score > 0 ? s.razed_score : ''}</td>
+    `;
+
+    // Click row to fly to map marker and also toggle selection
+    tr.addEventListener('click', (e) => {
+      if(e.target.type === 'checkbox') return;
+      map.setView([s.lat, s.lng], 17);
+      // Also highlight the parcel
+      toast(`${s.address || s.parcel} · ${fmtFull(s.sale_price)}`);
+    });
+
+    tbody.appendChild(tr);
+  });
+}
+
+function sgToggleComp(parcelId, checkbox){
+  // Find the sale
+  const s = allSales.find(x => x.parcel === parcelId);
+  if(!s) return;
+
+  if(typeof selectedComps === 'undefined') return;
+
+  const idx = selectedComps.findIndex(c => c.parcel === parcelId);
+  if(idx > -1){
+    // Deselect
+    selectedComps.splice(idx, 1);
+    checkbox.checked = false;
+  } else {
+    if(selectedComps.length >= 5){
+      toast('Maximum 5 comps — remove one first', true);
+      checkbox.checked = false;
+      return;
+    }
+    selectedComps.push(s);
+    checkbox.checked = true;
+  }
+  // Sync with existing comp selection UI
+  updateSelBar();
+  // Re-render grid to update row highlight
+  renderGrid();
+}
+
+// ── END SALES GRID ────────────────────────────────────────────────────────────
+
 // ── AUDITOR SITE HELPERS ──────────────────────────────────────────────────────
 function auditorOpen(parcel){
   // Copy PIN to clipboard so user can paste immediately on the search page
@@ -1607,6 +1943,7 @@ function toggleSelMode(){
   btn.classList.toggle('active', selModeOn);
   btn.textContent = selModeOn ? '☑ Selecting…' : '☑ Select Comps';
   document.getElementById('sel-bar').classList.toggle('hidden', !selModeOn && selectedComps.length === 0);
+  renderGrid(); // sync checkbox state in grid
   if(!selModeOn && selectedComps.length === 0) clearSelection();
   toast(selModeOn ? 'Click up to 5 sales on the map or list to select comps' : 'Selection mode off');
 }
@@ -1642,6 +1979,8 @@ function updateSelUI(){
   const genBtn= document.getElementById('btn-generate');
   count.textContent = `${selectedComps.length} / 5 selected`;
   genBtn.disabled = selectedComps.length === 0;
+  const hdrGenBtn = document.getElementById('hdr-gen-btn');
+  if(hdrGenBtn) hdrGenBtn.disabled = selectedComps.length === 0;
   bar.classList.toggle('hidden', selectedComps.length === 0 && !selModeOn);
   for(let i=0;i<5;i++){
     const slot = document.getElementById(`slot-${i}`);
@@ -1661,7 +2000,7 @@ function updateSelUI(){
 
 // ── DOCX SALES SHEET GENERATION ───────────────────────────────────────────────
 async function generateSalesSheet(){
-  if(selectedComps.length === 0) return;
+  if(selectedComps.length === 0){ toast("Select at least 1 comp using ☑ Select Comps first", true); return; }
   const btn = document.getElementById('btn-generate');
   btn.disabled = true;
   btn.textContent = '⏳ Building…';
