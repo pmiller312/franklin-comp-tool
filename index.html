@@ -85,7 +85,7 @@ select:focus,input:focus{border-color:var(--accent);}
 .chip.active{background:var(--accent);color:#0c0e12;border-color:var(--accent);font-weight:700;}
 
 /* Results list */
-.results-header{padding:7px 12px;font-family:'IBM Plex Mono',monospace;font-size:.58rem;color:var(--muted);text-transform:uppercase;letter-spacing:.1em;border-bottom:1px solid var(--border);flex-shrink:0;}
+.results-header{padding:5px 8px 5px 12px;font-family:'IBM Plex Mono',monospace;font-size:.58rem;color:var(--muted);text-transform:uppercase;letter-spacing:.1em;border-bottom:1px solid var(--border);flex-shrink:0;display:flex;align-items:center;justify-content:space-between;gap:6px;}
 .results-list{flex:1;overflow-y:auto;}
 .results-list::-webkit-scrollbar{width:3px;}
 .results-list::-webkit-scrollbar-thumb{background:var(--border);}
@@ -162,7 +162,8 @@ select:focus,input:focus{border-color:var(--accent);}
   font-family:'IBM Plex Mono',monospace;font-size:.62rem;letter-spacing:.06em;
   transition:all .15s;white-space:nowrap;
 }
-.sel-mode-btn:hover,.sel-mode-btn.active{background:rgba(74,232,176,.12);}
+.sel-mode-btn:hover:not(:disabled),.sel-mode-btn.active{background:rgba(74,232,176,.12);}
+.sel-mode-btn:disabled{border-color:var(--border);color:var(--muted);cursor:not-allowed;}
 .aerial-btn.active{background:var(--accent);color:#0c0e12;border-color:var(--accent);font-weight:700;}
 
 /* Popup */
@@ -440,6 +441,17 @@ canvas#reg-canvas{width:100%;height:100%;}
         Updated: Mon–Fri nightly · No API key required
       </div>
 
+      <!-- How to use -->
+      <div style="margin-top:10px;border:1px solid #1f2736;border-radius:3px;padding:8px 10px;background:#0a0c10;font-family:'IBM Plex Mono',monospace;font-size:.57rem;line-height:1.65;">
+        <div style="color:var(--accent);font-weight:700;letter-spacing:.06em;margin-bottom:4px;">HOW TO SELECT COMPS</div>
+        <div style="color:#8a9a8a;">
+          1. <span style="color:var(--text)">Fetch data</span> using the query above<br>
+          2. Click <span style="color:var(--accent2)">☑ Select Comps</span> button (appears above results list)<br>
+          3. <span style="color:var(--text)">Click dots on the map</span> or <span style="color:var(--text)">items in the list</span> to select up to 5 sales<br>
+          4. Click <span style="color:var(--accent2)">⬇ Generate Sales Sheet</span> to download a DOCX comp data sheet
+        </div>
+      </div>
+
       <!-- Vacancy verification disclosure -->
       <div style="margin-top:10px;border:1px solid #2a3a2a;border-radius:3px;padding:8px 10px;background:#0d130d;font-family:'IBM Plex Mono',monospace;font-size:.57rem;line-height:1.65;">
         <div style="color:#4ae8b0;font-weight:700;letter-spacing:.06em;margin-bottom:4px;">✓ VACANCY VERIFICATION</div>
@@ -467,7 +479,13 @@ canvas#reg-canvas{width:100%;height:100%;}
       <span style="font-family:'IBM Plex Mono',monospace;font-size:.58rem;color:var(--muted)">Run query to see filters</span>
     </div>
 
-    <div class="results-header" id="results-header">0 results</div>
+    <div class="results-header">
+      <span id="results-header">0 results</span>
+      <button id="sel-mode-btn" class="sel-mode-btn" onclick="toggleSelMode()" disabled
+        title="Click sales on the map or list to select up to 5 comps, then generate a data sheet">
+        ☑ Select Comps
+      </button>
+    </div>
     <div class="results-list" id="results-list"></div>
   </div>
 
@@ -552,6 +570,19 @@ const osipLayer = L.esri.imageMapLayer({
   url: 'https://geo.oit.ohio.gov/arcgis/rest/services/OSIP/OSIP_6in_best_avail/ImageServer',
   opacity: 1,
   attribution: 'Ohio Statewide Imagery Program (OSIP) © OGRIP/OIT Ohio — Public Domain'
+});
+// If OSIP server is unavailable (503 etc), fall back to Esri World automatically
+osipLayer.on('requesterror', function() {
+  if(aerialMode === 1) {
+    toast('⚠ OSIP server unavailable — switching to Esri World Imagery', true);
+    map.removeLayer(osipLayer);
+    esriLayer.addTo(map);
+    const btn = document.getElementById('aerial-btn');
+    btn.style.background = '#4a8ae8';
+    btn.style.color = '#fff';
+    btn.textContent = '🛰 Esri World';
+    aerialMode = 2;
+  }
 });
 // Esri World Imagery — fallback / comparison layer
 const esriLayer = L.tileLayer(
