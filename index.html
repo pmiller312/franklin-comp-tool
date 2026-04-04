@@ -121,6 +121,15 @@ select:focus,input:focus{border-color:var(--accent);}
 }
 .aerial-btn:hover{border-color:var(--accent);color:var(--accent);}
 .aerial-btn.active{background:var(--accent);color:#0c0e12;border-color:var(--accent);font-weight:700;}
+.flood-btn{
+  position:absolute;top:10px;right:148px;z-index:1000;
+  background:var(--panel);border:1px solid var(--border);
+  color:var(--muted);font-family:'IBM Plex Mono',monospace;font-size:.62rem;
+  padding:5px 10px;border-radius:3px;cursor:pointer;letter-spacing:.06em;
+  transition:all .15s;user-select:none;white-space:nowrap;
+}
+.flood-btn:hover{border-color:#4a8ae8;color:#4a8ae8;}
+.flood-btn.active{background:#4a8ae8;color:#fff;border-color:#4a8ae8;font-weight:700;}
 
 /* Comp selection */
 /* ── SALES GRID ── */
@@ -483,6 +492,15 @@ canvas#reg-canvas{width:100%;height:100%;}
       </div>
 
       <div class="field-row">
+        <div class="field-label">Flood Zone (Auditor Data)</div>
+        <select id="q-flood" onchange="render()">
+          <option value="all" selected>All (any flood status)</option>
+          <option value="none">Not in flood zone</option>
+          <option value="flood">In flood zone only</option>
+        </select>
+      </div>
+
+      <div class="field-row">
         <div class="field-label">Vacant Land Class (Ohio DTE)</div>
         <select id="q-class">
           <option value="VACANT" selected>All Vacant Land</option>
@@ -572,6 +590,7 @@ canvas#reg-canvas{width:100%;height:100%;}
   <!-- MAP -->
   <div class="map-wrap">
     <div id="map"></div>
+    <button class="flood-btn"  id="flood-btn"  onclick="toggleFlood()">💧 FEMA Flood</button>
     <button class="aerial-btn" id="aerial-btn" onclick="cycleAerial()">🛰 Aerial</button>
     <div class="source-badge" id="source-badge">
       <span class="warn">⚠ No data loaded</span><br>
@@ -715,6 +734,85 @@ const labelLayer = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_only_labe
 
 darkLayer.addTo(map);
 L.control.zoom({position:'topright'}).addTo(map);
+
+// ── FEMA NFHL FLOOD OVERLAY ───────────────────────────────────────────────────
+// Public domain, no API key. Layer 28 = Flood Hazard Zones (S_Fld_Haz_Ar)
+// FEMA NFHL — two separate base URLs: one for WMS tiles, one for REST identify
+const NFHL_WMS  = 'https://hazards.fema.gov/gis/nfhl/services/public/NFHLWMS/MapServer/WMSServer';
+const NFHL_REST = 'https://hazards.fema.gov/gis/nfhl/rest/services/public/NFHL/MapServer';
+const floodLayer = L.tileLayer.wms(NFHL_WMS, {
+  layers: '28',
+  format: 'image/png',
+  transparent: true,
+  version: '1.3.0',
+  opacity: 0.45,
+  attribution: 'FEMA National Flood Hazard Layer (NFHL) — Public Domain'
+});
+let floodOn = false;
+
+function toggleFlood(){
+  floodOn = !floodOn;
+  const btn = document.getElementById('flood-btn');
+  if(floodOn){
+    floodLayer.addTo(map);
+    btn.classList.add('active');
+    btn.textContent = '💧 Flood ON';
+    toast('FEMA NFHL flood zones overlay active');
+  } else {
+    map.removeLayer(floodLayer);
+    btn.classList.remove('active');
+    btn.textContent = '💧 FEMA Flood';
+  }
+}
+
+// Query NFHL for flood zone at a lat/lng point
+async function queryFloodZone(lat, lng){
+  try {
+    const params = new URLSearchParams({
+      geometry: `${lng},${lat}`,
+      geometryType: 'esriGeometryPoint',
+      inSR: '4326',
+      layers: 'all:28',
+      tolerance: 2,
+      mapExtent: `${lng-0.001},${lat-0.001},${lng+0.001},${lat+0.001}`,
+      imageDisplay: '800,800,96',
+      returnGeometry: 'false',
+      f: 'json'
+    });
+    const r = await fetch(`${NFHL_REST}/identify?${params}`);
+    if(!r.ok) return null;
+    const data = await r.json();
+    const hit = data.results?.[0]?.attributes;
+    if(!hit) return null;
+    return {
+      zone:    hit.FLD_ZONE || hit.ZONE || '',
+      subtype: hit.ZONE_SUBTY || '',
+      sfha:    hit.SFHA_TF === 'T',
+      bfe:     hit.STATIC_BFE > 0 ? hit.STATIC_BFE + ' ft' : '',
+      panel:   hit.FIRM_PAN || ''
+    };
+  } catch(e){ return null; }
+}
+
+// Flood zone label helper
+function floodZoneLabel(z){
+  if(!z) return '—';
+  const map = {
+    'A':'SFHA – Zone A (no BFE)',
+    'AE':'SFHA – Zone AE (BFE determined)',
+    'AH':'SFHA – Zone AH (shallow flooding)',
+    'AO':'SFHA – Zone AO (sheet flow)',
+    'AR':'SFHA – Zone AR (restoration)',
+    'A99':'SFHA – Zone A99 (protected by levee)',
+    'VE':'SFHA – Coastal High Hazard VE',
+    'V':'SFHA – Coastal High Hazard V',
+    'X':'Minimal Flood Hazard – Zone X',
+    'B':'Moderate Flood Hazard – Zone B',
+    'C':'Minimal Hazard – Zone C',
+    'D':'Undetermined Risk – Zone D',
+  };
+  return map[z.toUpperCase()] || z;
+}
 let markerLayer = L.layerGroup().addTo(map);
 // aerialMode: 0=dark, 1=OSIP, 2=Esri
 let aerialMode = 0;
@@ -1146,8 +1244,9 @@ function buildQuickPopup(s, color){
     </div>`;
 }
 
-function buildFullPopup(s, color, d){
+function buildFullPopup(s, color, d, flood){
   // d = flat GIS attributes object from FeatureServer query
+  // flood = FEMA NFHL zone data (may be null)
   const acres   = d.STATEDAREA || s.acres || 0;
   const sqft    = acres>0 ? Math.round(acres*43560).toLocaleString()+' SF' : '—';
   const ppa     = acres>0 ? fmtFull(s.sale_price/acres)+'/ac' : '—';
@@ -1210,7 +1309,9 @@ function buildFullPopup(s, color, d){
 
       ${section('Site Characteristics')}
       <div class="pu-grid">
-        ${row('Flood Zone', '<span style="color:'+(floodOk?'#4ae8b0':'#e84a4a')+'">'+(floodOk?'✓ No':'⚠ Yes')+'</span>')}
+        ${flood ? row('FEMA Flood Zone', '<span style="color:'+(flood.sfha?'#e84a4a':'#4ae8b0')+'">'+floodZoneLabel(flood.zone)+'</span>') : row('Flood Zone (Auditor)', '<span style="color:'+(floodOk?'#4ae8b0':'#e84a4a')+'">'+(floodOk?'✓ No':'⚠ Yes')+'</span>')}
+        ${flood && flood.bfe ? row('Base Flood Elevation', flood.bfe) : ''}
+        ${flood && flood.sfha ? row('Special Flood Hazard Area', '<span style="color:#e84a4a">⚠ Yes — insurance may be required</span>') : ''}
         ${row('Utilities', utils)}
         ${row('Water Svc', d.WATERSERV==='Y'?'✓ Yes':'No')}
         ${row('Sewer Svc', d.SEWERSERV==='Y'?'✓ Yes':'No')}
@@ -1236,6 +1337,7 @@ function getFiltered(){
   const impvMaxRaw = document.getElementById('q-impv-max')?.value;
   const impvMax    = impvMaxRaw !== undefined ? parseInt(impvMaxRaw) : -1;
   const razedMode  = document.getElementById('q-razed')?.value || 'all';
+  const floodMode  = document.getElementById('q-flood')?.value || 'all';
   return allSales.filter(s => {
     if(!activeClasses.has(s.class_desc||s.class_cd||'Unknown')) return false;
     if(impvMax === -1) {}                                       // no limit
@@ -1243,6 +1345,8 @@ function getFiltered(){
     else if(impvMax > 0 && s.impv_value > impvMax) return false;
     if(razedMode === 'only'    && !s.razed_flag) return false;
     if(razedMode === 'exclude' &&  s.razed_flag) return false;
+    if(floodMode === 'none'  &&  s.flood === 'Y') return false;
+    if(floodMode === 'flood' &&  s.flood !== 'Y') return false;
     return true;
   });
 }
@@ -1277,9 +1381,13 @@ function render(){
 
     // On open: fetch full detail from mobile API and update popup
     circle.on('popupopen', async () => {
-      const detail = await fetchParcelDetail(s.parcel);
-      if(detail && circle.getPopup()){
-        circle.getPopup().setContent(buildFullPopup(s, color, detail));
+      // Fetch parcel detail and flood zone in parallel
+      const [detail, flood] = await Promise.all([
+        fetchParcelDetail(s.parcel),
+        queryFloodZone(s.lat, s.lng)
+      ]);
+      if(circle.getPopup()){
+        circle.getPopup().setContent(buildFullPopup(s, color, detail || {}, flood));
       }
     });
 
@@ -2010,11 +2118,15 @@ async function generateSalesSheet(){
   toast('Fetching full detail for ' + selectedComps.length + ' comp(s)…');
 
   // Fetch full GIS detail for each selected comp
-  const details = await Promise.all(selectedComps.map(s => fetchParcelDetail(s.parcel)));
+  const [detailsArr, floodsArr] = await Promise.all([
+    Promise.all(selectedComps.map(s => fetchParcelDetail(s.parcel))),
+    Promise.all(selectedComps.map(s => queryFloodZone(s.lat, s.lng)))
+  ]);
 
   // Build data rows for each comp
   const comps = selectedComps.map((s, i) => {
-    const d = details[i] || {};
+    const d = detailsArr[i] || {};
+    const fz = floodsArr[i];
     const acres     = d.STATEDAREA || s.acres || 0;
     const sqft      = acres > 0 ? (acres * 43560).toFixed(0) : '';
     const ppa_gross = acres > 0 ? (s.sale_price / acres).toFixed(2) : '';
@@ -2059,8 +2171,8 @@ async function generateSalesSheet(){
       utilities:  utils,
       zoning:     d.USECD || s.use_cd || '',
       topography: '',
-      flood:      flood,
-      flood_zone: '',
+      flood:      fz ? floodZoneLabel(fz.zone) + (fz.sfha ? ' (SFHA)' : '') : (d.FLOOD === 'Y' ? 'Yes (Auditor)' : 'No (Auditor)'),
+      flood_zone: fz?.bfe ? 'BFE: ' + fz.bfe : '',
       ppa_gross:  ppa_gross ? '$' + Number(ppa_gross).toLocaleString(undefined,{minimumFractionDigits:2}) : '',
       ppa_net:    '',
       ppsf_gross: ppsf_gross ? '$' + ppsf_gross : '',
