@@ -2001,9 +2001,12 @@ function updateSelUI(){
 // ── DOCX SALES SHEET GENERATION ───────────────────────────────────────────────
 async function generateSalesSheet(){
   if(selectedComps.length === 0){ toast("Select at least 1 comp using ☑ Select Comps first", true); return; }
-  const btn = document.getElementById('btn-generate');
-  btn.disabled = true;
-  btn.textContent = '⏳ Building…';
+  // Update all generate buttons (sel-bar + header)
+  const allGenBtns = [
+    document.getElementById('btn-generate'),
+    document.getElementById('hdr-gen-btn')
+  ].filter(Boolean);
+  allGenBtns.forEach(b => { b.disabled = true; b.textContent = '⏳ Building…'; });
   toast('Fetching full detail for ' + selectedComps.length + ' comp(s)…');
 
   // Fetch full GIS detail for each selected comp
@@ -2075,26 +2078,46 @@ async function generateSalesSheet(){
     console.error(e);
   }
 
-  btn.disabled = false;
-  btn.textContent = '⬇ Generate Sales Sheet';
+  allGenBtns.forEach(b => { b.disabled = selectedComps.length === 0; b.textContent = '⬇ Generate Sales Sheet'; });
 }
 
 async function buildAndDownloadDocx(comps){
-  // Load docx-js from CDN
+  // Load docx-js from CDN (try primary, then fallback)
   if(!window.docx){
-    await new Promise((res, rej) => {
-      const s = document.createElement('script');
-      s.src = 'https://cdnjs.cloudflare.com/ajax/libs/docx/8.5.0/docx.umd.min.js';
-      s.onload = res; s.onerror = rej;
-      document.head.appendChild(s);
-    });
+    const cdns = [
+      'https://cdnjs.cloudflare.com/ajax/libs/docx/8.5.0/docx.umd.min.js',
+      'https://unpkg.com/docx@8.5.0/build/index.umd.js'
+    ];
+    let loaded = false;
+    for(const src of cdns){
+      try {
+        await new Promise((res, rej) => {
+          const s = document.createElement('script');
+          s.src = src;
+          s.onload = res;
+          s.onerror = rej;
+          document.head.appendChild(s);
+        });
+        if(window.docx){ loaded = true; break; }
+      } catch(e) { console.warn('docx CDN failed:', src, e); }
+    }
+    if(!loaded || !window.docx){
+      throw new Error('Could not load docx library. Check your internet connection and try again.');
+    }
   }
+
+  if(!window.docx) throw new Error('docx library not available — please refresh and try again.');
 
   const {
     Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell,
     AlignmentType, BorderStyle, WidthType, ShadingType, VerticalAlign,
     PageOrientation, HeadingLevel, PageBreak
   } = window.docx;
+
+  // Validate critical classes loaded
+  if(!Document || !Packer || !Paragraph){
+    throw new Error('docx library loaded but classes are undefined — try refreshing the page.');
+  }
 
   const W = 12240, MARGIN = 720, CONTENT = W - MARGIN*2; // US Letter, 0.5" margins
   const BORDER = { style: BorderStyle.SINGLE, size: 1, color: 'BBBBBB' };
