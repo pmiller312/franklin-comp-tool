@@ -654,7 +654,7 @@ canvas#reg-canvas{width:100%;height:100%;}
             <th onclick="sortGrid('district')">District</th>
             <th onclick="sortGrid('impv_value')">Impv $</th>
             <th onclick="sortGrid('razed_score')" title="Razed/Redeveloped site score">🔥</th>
-            <th style="cursor:default">Deed</th>
+            <th style="cursor:default">Recorder</th>
           </tr>
         </thead>
         <tbody id="sg-body"></tbody>
@@ -838,39 +838,37 @@ async function queryFloodZone(lat, lng){
 
 // Franklin County Recorder deed search URL
 function recorderUrl(ownerName, saleTs){
-  // Use last name only for search term — recorder exact-matches full names
-  // but last name alone reliably finds records. Date range narrows results.
+  // GIS OWNERNME1 = current owner = the GRANTEE of the most recent deed
+  // Search both grantor + grantee so we find the deed regardless of name order
+  // Use full name for search — more specific than last-name-only
   const raw = (ownerName||'').trim();
   if(!raw) return 'https://franklin.oh.publicsearch.us/';
 
-  // Extract search term: last name only for individuals, full name for businesses
-  // Business indicators: contains digits, or name has no space after stripping known suffixes
-  const isBusiness = /\d/.test(raw) || /^(THE\s|CITY\s|COUNTY\s|STATE\s|BOARD\s)/i.test(raw) || /\s+(LLC|INC|CORP|LTD|LP|LLP)\.?$/i.test(raw);
+  // Build search term: full name for businesses, full name for individuals too
+  // (searching both grantor+grantee means full name is safe and more specific)
+  const isBusiness = /\s+(LLC|INC|CORP|LTD|LP|LLP)\.?$/i.test(raw) || /\d/.test(raw) || /^(THE\s|CITY\s|COUNTY\s|STATE\s|BOARD\s)/i.test(raw);
   let searchTerm;
   if(isBusiness){
-    // For businesses: strip trailing legal suffixes and roman numerals, keep first two meaningful words
-    // Strip only the legal entity suffix at the end (LLC, INC, etc.), keep the business name
-    const stripped = raw
-      .replace(/\s+(LLC|L\.L\.C\.?|INC\.?|CORP\.?|LTD\.?|L\.P\.?|LLP\.?|CO\.)$/i,'')
-      .trim();
+    // Strip legal suffix for businesses, keep first two meaningful words
+    const stripped = raw.replace(/\s+(LLC|L\.L\.C\.?|INC\.?|CORP\.?|LTD\.?|L\.P\.?|LLP\.?|CO\.)$/i,'').trim();
     const words = stripped.split(/\s+/).filter(Boolean);
-    searchTerm = words.slice(0, 2).join(' '); // first two words gives good specificity
+    searchTerm = words.slice(0,2).join(' ');
     if(!searchTerm) searchTerm = raw.split(' ')[0];
   } else {
-    // Individual: use last name (first word) only — recorder exact-matches full names
-    // but last name reliably finds all records for that person
-    searchTerm = raw.split(' ')[0];
+    // Individual: use full name — recorder will match on it in either grantor or grantee position
+    searchTerm = raw;
   }
 
-  const parties = JSON.stringify({ grantor: [{ term: searchTerm, types: ['grantor'] }] });
+  // Search BOTH grantor and grantee — current owner (from GIS) is the grantee on the deed
+  const parties = JSON.stringify({ partyName: [{ term: searchTerm, types: ['grantor','grantee'] }] });
 
-  // Date range: ±10 days from sale date, end capped at today
+  // Date range: sale date −10 days to +10 days, end capped at today
   let dateRange = '';
   if(saleTs){
     const d = new Date(saleTs);
     if(!isNaN(d)){
-      const start = new Date(d); start.setDate(start.getDate() - 10);
-      let   end   = new Date(d); end.setDate(end.getDate()   + 10);
+      const start = new Date(d); start.setDate(start.getDate()-10);
+      let   end   = new Date(d); end.setDate(end.getDate()+10);
       const today = new Date();
       if(end > today) end = today;
       const fmt = dt => dt.getFullYear().toString()
@@ -887,15 +885,15 @@ function recorderUrl(ownerName, saleTs){
 }
 
 function recorderLabel(saleTs){
-  if(!saleTs) return '🔗 Deed search';
+  if(!saleTs) return 'Recorder Data';
   const d = new Date(saleTs);
-  if(isNaN(d)) return '🔗 Deed search';
+  if(isNaN(d)) return 'Recorder Data';
   const start = new Date(d); start.setDate(start.getDate()-10);
   let   end   = new Date(d); end.setDate(end.getDate()+10);
   const today = new Date();
   if(end > today) end = today;
   const mo = n => ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][n];
-  return `🔗 Deed (${mo(start.getMonth())} ${start.getDate()}–${mo(end.getMonth())} ${end.getDate()} ${end.getFullYear()})`;
+  return 'Recorder Data';
 }
 
 // Flood zone label helper
@@ -1395,7 +1393,7 @@ function buildFullPopup(s, color, d, flood){
       <div class="pu-grid">
         ${row('Owner', owner.slice(0,30))}
         ${row('Parcel #', s.parcel)}
-        ${row('Recorder Deed', `<a href="${recorderUrl(s.owner, s.sale_date)}" target="_blank" style="color:var(--accent2);text-decoration:underline">${recorderLabel(s.sale_date)}</a>`)}
+        ${row('Recorder Data', `<a href="${recorderUrl(s.owner, s.sale_date)}" target="_blank" style="color:var(--accent2);text-decoration:underline">Recorder Data</a>`)}
         ${row('Mail Address', mailAddr.slice(0,30)||'—')}
         ${row('Neighborhood', nbhd)}
         ${row('Use / Class', useDesc.slice(0,26))}
@@ -1534,7 +1532,7 @@ function updateList(filtered){
         <span class="result-date">${fmtDate(s.sale_date)}</span>
       </div>
       <div class="result-sub">${s.acres||0} ac · ${(s.class_desc||s.class_cd||'').slice(0,25)} · ${(s.district||'').slice(0,20)}</div>
-      <div class="result-sub"><a href="${recorderUrl(s.owner, s.sale_date)}" target="_blank" onclick="event.stopPropagation()" style="color:var(--accent2);text-decoration:none;font-size:.56rem">${recorderLabel(s.sale_date)}</a></div>
+      <div class="result-sub"><a href="${recorderUrl(s.owner, s.sale_date)}" target="_blank" onclick="event.stopPropagation()" style="color:var(--accent2);text-decoration:none;font-size:.56rem">Recorder Data</a></div>
     `;
     el.addEventListener('click',()=>{
       if(selModeOn){ toggleCompSelection(s); return; }
@@ -2081,7 +2079,7 @@ function renderGrid(){
       <td class="td-muted">${dist}</td>
       <td class="${s.impv_value > 0 ? 'td-razed' : 'td-muted'}">${impv}</td>
       <td style="text-align:center">${s.razed_score > 0 ? s.razed_score : ''}</td>
-      <td style="padding:4px 8px;"><a href="${recorderUrl(s.owner, s.sale_date)}" target="_blank" onclick="event.stopPropagation()" style="color:var(--accent2);text-decoration:none;font-size:.58rem;white-space:nowrap">${recorderLabel(s.sale_date)}</a></td>
+      <td style="padding:4px 8px;"><a href="${recorderUrl(s.owner, s.sale_date)}" target="_blank" onclick="event.stopPropagation()" style="color:var(--accent2);text-decoration:none;font-size:.58rem;white-space:nowrap">Recorder Data</a></td>
     `;
 
     // Click row to fly to map marker and also toggle selection
