@@ -738,7 +738,9 @@ L.control.zoom({position:'topright'}).addTo(map);
 // ── FEMA NFHL FLOOD OVERLAY ───────────────────────────────────────────────────
 // Uses ArcGIS Online NFHL FeatureServer — CORS-enabled, no WMS, no dynamicMapLayer
 // hazards.fema.gov WMS/REST blocks cross-origin requests; ArcGIS Online does not
-const NFHL_FS = 'https://services.arcgis.com/P3ePLMYs2RVChkJx/arcgis/rest/services/NFHL_National_Public/FeatureServer/28/query';
+// FEMA NFHL FeatureServer on ArcGIS Online — CORS enabled, no API key needed
+// Service: FEMA_National_Flood_Hazard_Layer, layer 0 = S_Fld_Haz_Ar (flood zones)
+const NFHL_FS = 'https://services.arcgis.com/2gdL2gxYNFY2TOUb/arcgis/rest/services/FEMA_National_Flood_Hazard_Layer/FeatureServer/0/query';
 
 let floodOn       = false;
 let floodGeoLayer = null;
@@ -769,7 +771,7 @@ async function loadFloodZones(){
     spatialRel: 'esriSpatialRelIntersects',
     outFields: 'FLD_ZONE,ZONE_SUBTY,SFHA_TF,STATIC_BFE',
     returnGeometry: 'true',
-    where: "FLD_ZONE <> 'OPEN WATER'",
+    where: "FLD_ZONE != 'OPEN WATER'",
     resultRecordCount: 1000,
     f: 'geojson'
   });
