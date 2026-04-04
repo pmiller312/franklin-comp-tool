@@ -1692,12 +1692,7 @@ async function generateSalesSheet(){
       ppa_net:    '',
       ppsf_gross: ppsf_gross ? '$' + ppsf_gross : '',
       ppsf_net:   '',
-      remarks:    (s.razed_flag ? '🔥 POSSIBLE RAZED/REDEVELOPED SITE
-' + s.razed_reasons.join('
-') + '
-
-' : '') +
-                  (s.txn_parcel_count > 1 ? `Multi-parcel sale (${s.txn_parcel_count} parcels). ` : ''),
+      remarks:    (s.razed_flag ? '\uD83D\uDD25 POSSIBLE RAZED/REDEVELOPED SITE\n' + (s.razed_reasons||[]).join('\n') + '\n\n' : '') + (s.txn_parcel_count > 1 ? 'Multi-parcel sale (' + s.txn_parcel_count + ' parcels). ' : ''),
     };
   });
 
@@ -1857,8 +1852,7 @@ async function buildAndDownloadDocx(comps){
         new TableRow({ children: [
           new TableCell({ columnSpan: 4, borders: NO_BORDERS, margins: { top: 60, bottom: 120, left: 100, right: 100 },
             children: c.remarks
-              ? c.remarks.split('
-').map(line => new Paragraph({ children: [new TextRun({ text: line, size: 18, font: 'Arial' })] }))
+              ? c.remarks.split('\n').map(line => new Paragraph({ children: [new TextRun({ text: line, size: 18, font: 'Arial' })] }))
               : [new Paragraph({ children: [new TextRun({ text: ' ', size: 18 })] })]
           })
         ]}),
