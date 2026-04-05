@@ -1259,29 +1259,33 @@ async function runQuery(){
   if(isFetching) return;
 
   // ── Input validation ────────────────────────────────────────────────────
-  const _vFrom  = (document.getElementById('q-date-from')?.value || '').trim();
-  const _vTo    = (document.getElementById('q-date-to')?.value   || '').trim();
-  const _vPrice = (document.getElementById('q-price-min')?.value || '').trim();
-  const _dateRx = /^\d{1,2}\/\d{1,2}\/\d{4}$|^\d{4}-\d{2}-\d{2}$/;
-  const errors  = [];
+  try {
+    const _vFrom  = (document.getElementById('q-date-from')?.value || '').trim();
+    const _vTo    = (document.getElementById('q-date-to')?.value   || '').trim();
+    const _vPrice = (document.getElementById('q-price-min')?.value || '').trim();
+    const _dateRx = /^\d{1,2}\/\d{1,2}\/\d{4}$|^\d{4}-\d{2}-\d{2}$/;
+    const errors  = [];
 
-  if(!_vFrom || !_dateRx.test(_vFrom))
-    errors.push('Start date is required (MM/DD/YYYY)');
-  if(!_vTo || !_dateRx.test(_vTo))
-    errors.push('End date is required (MM/DD/YYYY)');
-  if(_vFrom && _vTo && _dateRx.test(_vFrom) && _dateRx.test(_vTo)){
-    const d1 = new Date(_vFrom.includes('/') ? _vFrom.replace(/(\d+)\/(\d+)\/(\d+)/,'$3-$1-$2') : _vFrom);
-    const d2 = new Date(_vTo.includes('/')   ? _vTo.replace(/(\d+)\/(\d+)\/(\d+)/,'$3-$1-$2')   : _vTo);
-    if(d1 > d2) errors.push('Start date must be before end date');
-  }
-  if(_vPrice !== '' && (isNaN(Number(_vPrice)) || Number(_vPrice) < 0))
-    errors.push('Min price must be a positive number');
+    if(!_vFrom || !_dateRx.test(_vFrom))
+      errors.push('Start date required (MM/DD/YYYY)');
+    if(!_vTo || !_dateRx.test(_vTo))
+      errors.push('End date required (MM/DD/YYYY)');
+    if(_vFrom && _vTo && _dateRx.test(_vFrom) && _dateRx.test(_vTo)){
+      const d1 = new Date(_vFrom.replace(/(\d+)\/(\d+)\/(\d+)/,'$3-$1-$2'));
+      const d2 = new Date(_vTo.replace(/(\d+)\/(\d+)\/(\d+)/,'$3-$1-$2'));
+      if(d1 > d2) errors.push('Start date must be before end date');
+    }
+    if(_vPrice !== '' && (isNaN(Number(_vPrice)) || Number(_vPrice) < 0))
+      errors.push('Min price must be a positive number');
 
-  if(errors.length){
-    toast('⚠ ' + errors.join(' · '), true);
-    // On mobile highlight the filters tab so user knows where to look
-    if(IS_MOBILE) mobShowPane('filters');
-    return;
+    if(errors.length){
+      if(typeof toast === 'function') toast('⚠ ' + errors.join(' · '), true);
+      if(typeof IS_MOBILE !== 'undefined' && IS_MOBILE && typeof mobShowPane === 'function') mobShowPane('filters');
+      return;
+    }
+  } catch(validationErr) {
+    // Validation failed unexpectedly — proceed anyway rather than blocking fetch
+    console.warn('Validation error:', validationErr);
   }
   // ── End validation ───────────────────────────────────────────────────────
 
