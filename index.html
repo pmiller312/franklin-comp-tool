@@ -7,8 +7,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=IBM+Plex+Mono:wght@400;500&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<script src="https://unpkg.com/esri-leaflet@3.0.12/dist/esri-leaflet.js"></script>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV/XN2GqAk=" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/esri-leaflet@3.0.12/dist/esri-leaflet.js" crossorigin="anonymous"></script>
 <style>
 :root {
   --bg:#0c0e12; --panel:#131720; --border:#1f2736; --accent:#e8c84a;
@@ -1167,6 +1167,34 @@ function setProgress(pct, msg){
 
 async function runQuery(){
   if(isFetching) return;
+
+  // ── Input validation ────────────────────────────────────────────────────
+  const _vFrom  = (document.getElementById('q-date-from')?.value || '').trim();
+  const _vTo    = (document.getElementById('q-date-to')?.value   || '').trim();
+  const _vPrice = (document.getElementById('q-price-min')?.value || '').trim();
+  const _dateRx = /^\d{1,2}\/\d{1,2}\/\d{4}$|^\d{4}-\d{2}-\d{2}$/;
+  const errors  = [];
+
+  if(!_vFrom || !_dateRx.test(_vFrom))
+    errors.push('Start date is required (MM/DD/YYYY)');
+  if(!_vTo || !_dateRx.test(_vTo))
+    errors.push('End date is required (MM/DD/YYYY)');
+  if(_vFrom && _vTo && _dateRx.test(_vFrom) && _dateRx.test(_vTo)){
+    const d1 = new Date(_vFrom.includes('/') ? _vFrom.replace(/(\d+)\/(\d+)\/(\d+)/,'$3-$1-$2') : _vFrom);
+    const d2 = new Date(_vTo.includes('/')   ? _vTo.replace(/(\d+)\/(\d+)\/(\d+)/,'$3-$1-$2')   : _vTo);
+    if(d1 > d2) errors.push('Start date must be before end date');
+  }
+  if(_vPrice !== '' && (isNaN(Number(_vPrice)) || Number(_vPrice) < 0))
+    errors.push('Min price must be a positive number');
+
+  if(errors.length){
+    toast('⚠ ' + errors.join(' · '), true);
+    // On mobile highlight the filters tab so user knows where to look
+    if(IS_MOBILE) mobShowPane('filters');
+    return;
+  }
+  // ── End validation ───────────────────────────────────────────────────────
+
   isFetching = true;
 
   const btn = document.getElementById('btn-fetch');
@@ -1190,7 +1218,10 @@ async function runQuery(){
   const priceMin = parseInt(document.getElementById('q-price-min').value) || 1000;
   const acresMin = parseFloat(document.getElementById('q-acres-min').value) || 0;
   const acresMax = parseFloat(document.getElementById('q-acres-max').value) || 0;
-  const classVal = document.getElementById('q-class').value;
+  // Whitelist classVal to prevent injection — only allow known DTE codes
+  const _classRaw = document.getElementById('q-class').value || 'VACANT';
+  const _classAllowed = ['VACANT','ALL','100','110','300','400','500','501','502','503','504','505'];
+  const classVal = _classAllowed.includes(_classRaw) ? _classRaw : 'VACANT';
   const limit    = parseInt(document.getElementById('q-limit').value);
 
   // Build WHERE clause
@@ -1547,7 +1578,7 @@ function buildFullPopup(s, color, d, flood){
 
   return `
     <div style="min-width:300px;max-width:330px">
-      <div class="pu-addr">${d.SITEADDRESS||s.address||s.parcel}</div>
+      <div class="pu-addr">${esc(d.SITEADDRESS||s.address||s.parcel)}</div>
 
       ${s.txn_parcel_count > 1 ? `<div style="background:#2a1f00;border:1px solid var(--accent);border-radius:2px;padding:4px 8px;margin-bottom:8px;font-family:'IBM Plex Mono',monospace;font-size:.6rem;color:var(--accent);line-height:1.5">⚠ Multi-parcel sale (${s.txn_parcel_count} parcels)<br><span style="color:var(--accent2)">✓ All parcels: BLDVALUE=0 &amp; TOTVALUE=LNDVALUE</span></div>` : ''}
       ${s.razed_flag ? `<div style="background:#1a0a1a;border:1px solid #e84ab0;border-radius:2px;padding:4px 8px;margin-bottom:8px;font-family:'IBM Plex Mono',monospace;font-size:.6rem;color:#e84ab0;line-height:1.6">🔥 Possible razed/redeveloped site<br>${s.razed_reasons.map(r=>'· '+r).join('<br>')}</div>` : ''}
@@ -1563,7 +1594,7 @@ function buildFullPopup(s, color, d, flood){
 
       ${section('Owner & Parcel')}
       <div class="pu-grid">
-        ${row('Owner', owner.slice(0,30))}
+        ${row('Owner', esc(owner).slice(0,30))}
         ${row('Parcel #', s.parcel)}
         ${row('Recorder Data', `<a href="${recorderUrl(s.owner, s.sale_date)}" target="_blank" style="color:var(--accent2);text-decoration:underline">Recorder Data</a>`)}
         ${row('Mail Address', mailAddr.slice(0,30)||'—')}
@@ -1699,7 +1730,7 @@ function updateList(filtered){
     const el = document.createElement('div');
     el.className = 'result-item';
     el.innerHTML = `
-      <div class="result-addr">${s.razed_flag ? '🔥 ' : ''}${s.address||s.parcel}</div>
+      <div class="result-addr">${s.razed_flag ? '🔥 ' : ''}${esc(s.address||s.parcel)}</div>
       <div class="result-row">
         <span class="result-price" style="color:${color}">${fmtFull(s.sale_price)}</span>
         <span class="result-date">${fmtDate(s.sale_date)}</span>
@@ -2082,6 +2113,17 @@ function runRegression(){
 }
 
 
+// ── SECURITY: HTML escape for untrusted data in innerHTML contexts ─────────
+function esc(str){
+  if(str == null) return '';
+  return String(str)
+    .replace(/&/g,'&amp;')
+    .replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;')
+    .replace(/'/g,'&#39;');
+}
+
 // ── SALES GRID ────────────────────────────────────────────────────────────────
 let gridSortCol = 'sale_date';
 let gridSortDir = -1; // -1 = desc, 1 = asc
@@ -2243,7 +2285,7 @@ function renderGrid(){
           onclick="event.stopPropagation(); sgToggleComp('${s.parcel}', this)"
           title="Select as comp">
       </td>
-      <td>${s.razed_flag ? '🔥 ' : ''}${s.address || s.parcel}</td>
+      <td>${s.razed_flag ? '🔥 ' : ''}${esc(s.address || s.parcel)}</td>
       <td class="td-muted">${dateStr}</td>
       <td class="td-price">${fmtFull(s.sale_price)}</td>
       <td class="td-muted">${s.acres || '—'}</td>
@@ -2672,8 +2714,12 @@ async function buildAndDownloadDocx(comps){
 // Detect touch device under 900px — covers all phones and most tablets
 const IS_MOBILE = ('ontouchstart' in window || navigator.maxTouchPoints > 0) && window.innerWidth < 900;
 
+// Apply mobile mode based on touch capability and width
 if(IS_MOBILE){
   document.body.classList.add('mobile-mode');
+}
+// Always init mob panel if it exists (handles cases where touch detection misses)
+if(document.getElementById('mob-panel')){
   mobInit();
 }
 
@@ -2686,11 +2732,13 @@ function mobInit(){
   // Set initial panel height
   mobSetHeight(MOB_SNAP.half, true);
 
-  // Sync initial date values from desktop inputs
+  // Seed mob date inputs from desktop defaults (which have hardcoded values)
   const today = new Date();
   const fmt = d => String(d.getMonth()+1).padStart(2,'0')+'/'+String(d.getDate()).padStart(2,'0')+'/'+d.getFullYear();
-  document.getElementById('mob-date-to').value   = fmt(today);
-  document.getElementById('mob-date-from').value = document.getElementById('q-date-from')?.value || '01/01/2023';
+  const desktopFrom = document.getElementById('q-date-from')?.value;
+  const desktopTo   = document.getElementById('q-date-to')?.value;
+  document.getElementById('mob-date-from').value = desktopFrom || '01/01/2023';
+  document.getElementById('mob-date-to').value   = desktopTo   || fmt(today);
   // Sync class and limit from desktop defaults
   const deskClass = document.getElementById('q-class')?.value;
   const deskLimit = document.getElementById('q-limit')?.value;
@@ -2780,7 +2828,8 @@ function syncMobFilter(){
   const sync = (mobId, desktopId) => {
     const m = document.getElementById(mobId);
     const d = document.getElementById(desktopId);
-    if(m && d) d.value = m.value;
+    // Only sync if mobile input has a value — don't overwrite desktop with empty string
+    if(m && d && m.value !== '') d.value = m.value;
   };
   sync('mob-date-from',   'q-date-from');
   sync('mob-date-to',     'q-date-to');
@@ -2823,7 +2872,7 @@ function mobRenderResults(){
     const el    = document.createElement('div');
     el.className = 'result-item';
     el.innerHTML = `
-      <div class="result-addr">${s.razed_flag ? '🔥 ' : ''}${s.address||s.parcel}</div>
+      <div class="result-addr">${s.razed_flag ? '🔥 ' : ''}${esc(s.address||s.parcel)}</div>
       <div class="result-row">
         <span class="result-price" style="color:${color}">${fmtFull(s.sale_price)}</span>
         <span class="result-date">${fmtDate(s.sale_date)}</span>
