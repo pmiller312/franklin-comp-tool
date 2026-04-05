@@ -1004,8 +1004,8 @@ L.control.zoom({position:'topright'}).addTo(map);
 // We create a custom Leaflet layer that requests a single map image for the viewport
 const NFHL_EXPORT = 'https://hazards.fema.gov/arcgis/rest/services/public/NFHL/MapServer/export';
 
-let floodOn       = false;
-let floodOverlay  = null;   // current L.imageOverlay
+var floodOn       = false;
+var floodOverlay  = null;   // current L.imageOverlay
 
 function toggleFlood(){
   floodOn = !floodOn;
@@ -1177,9 +1177,9 @@ function floodZoneLabel(z){
   };
   return map[z.toUpperCase()] || z;
 }
-let markerLayer = L.layerGroup().addTo(map);
+var markerLayer = L.layerGroup().addTo(map);
 // aerialMode: 0=dark, 1=OSIP, 2=Esri
-let aerialMode = 0;
+var aerialMode = 0;
 
 function cycleAerial(){
   // Remove all base layers and labels first
@@ -1213,9 +1213,9 @@ function cycleAerial(){
 }
 
 // ── STATE ─────────────────────────────────────────────────────────────────────
-let allSales = [];
-let activeClasses = new Set();
-let isFetching = false;
+var allSales = [];
+var activeClasses = new Set();
+var isFetching = false;
 
 // ── HELPERS ───────────────────────────────────────────────────────────────────
 function fmt(n){ return n>=1e6?"$"+(n/1e6).toFixed(2)+"M":n>=1e3?"$"+(n/1e3).toFixed(0)+"K":"$"+Math.round(n); }
@@ -1873,7 +1873,7 @@ function clearData(){
 
 // ── REGRESSION ENGINE ─────────────────────────────────────────────────────────
 
-let regOpen = false;
+var regOpen = false;
 
 function toggleRegression(){
   regOpen = !regOpen;
@@ -2219,9 +2219,9 @@ function esc(str){
 }
 
 // ── SALES GRID ────────────────────────────────────────────────────────────────
-let gridSortCol = 'sale_date';
+var gridSortCol = 'sale_date';
 let gridSortDir = -1; // -1 = desc, 1 = asc
-let gridCollapsed = false;
+var gridCollapsed = false;
 
 function setGridSize(px, skipActive){
   const pane = document.getElementById('grid-pane');
@@ -2456,8 +2456,8 @@ function auditorCopy(parcel, btn){
 }
 
 // ── COMP SELECTION ───────────────────────────────────────────────────────────
-let selectedComps = [];   // up to 5 sale objects
-let selModeOn = false;
+var selectedComps = [];   // up to 5 sale objects
+var selModeOn = false;
 
 function toggleSelMode(){
   selModeOn = !selModeOn;
@@ -2818,8 +2818,8 @@ if(document.getElementById('mob-panel')){
 }
 
 // ── Mobile panel state ─────────────────────────────────────────────────────
-let _mobPane     = 'filters';
-let _mobPanelH   = 320;
+var _mobPane     = 'filters';
+var _mobPanelH   = 320;
 const MOB_SNAP   = { collapsed: 88, half: 320, full: Math.round(window.innerHeight * 0.82) };
 
 function mobInit(){
@@ -3069,8 +3069,8 @@ function mobOnRender(){
 // ── PANEL CONTROLS ────────────────────────────────────────────────────────────
 
 // Sidebar collapse/expand
-let sidebarCollapsed = false;
-let sidebarWidth = 300;
+var sidebarCollapsed = false;
+var sidebarWidth = 300;
 
 function toggleSidebar(){
   sidebarCollapsed = !sidebarCollapsed;
