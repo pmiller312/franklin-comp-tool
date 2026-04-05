@@ -62,6 +62,8 @@ select:focus,input:focus{border-color:var(--accent);}
 .btn-fetch:disabled{background:#333;color:#666;cursor:not-allowed;}
 .btn-clear{background:transparent;border:1px solid var(--border);color:var(--muted);margin-top:4px;}
 .btn-clear:hover{border-color:var(--danger);color:var(--danger);}
+body.mobile-mode .query-panel .btn-fetch,
+body.mobile-mode .query-panel .btn-clear { display: none; }
 
 /* Progress */
 .progress-wrap{padding:10px 14px;border-bottom:1px solid var(--border);display:none;}
@@ -334,170 +336,174 @@ canvas#reg-canvas{width:100%;height:100%;}
 .reg-empty{grid-column:span 2;text-align:center;padding:30px;color:var(--muted);font-family:'IBM Plex Mono',monospace;font-size:.7rem;}
 
 /* ══════════════════════════════════════════════════════
-   MOBILE LAYOUT
-   Applied when .mobile-mode class is on <body>
+   MOBILE LAYOUT  (applied via .mobile-mode on <body>)
+   Strategy: map fills viewport, draggable bottom panel
+   holds all controls — no DOM moving, no cloning
    ══════════════════════════════════════════════════════ */
-body.mobile-mode {
-  overflow: hidden;
-}
 
-/* Mobile app: header + map + tab bar. No grid sidebar. */
-body.mobile-mode .app {
-  grid-template-rows: 44px 1fr 52px;
-  height: 100dvh;
-}
+/* ── Base mobile overrides ── */
+body.mobile-mode { overflow:hidden; }
+body.mobile-mode .app { grid-template-rows:44px 1fr; height:100dvh; }
+body.mobile-mode header { padding:0 10px; height:44px; }
+body.mobile-mode .logo  { font-size:1rem; letter-spacing:.06em; }
+body.mobile-mode .header-right { gap:6px; }
+body.mobile-mode .reg-btn { font-size:.52rem; padding:3px 7px; }
 
-/* Compact header */
-body.mobile-mode header {
-  padding: 0 10px;
-}
-body.mobile-mode .logo {
-  font-size: 1.1rem;
-}
-body.mobile-mode .header-right {
-  gap: 6px;
-}
-body.mobile-mode .reg-btn {
-  font-size: .55rem;
-  padding: 4px 8px;
-}
+/* Main area: map fills all, panel overlays on top */
+body.mobile-mode .main { display:block; position:relative; height:100%; overflow:hidden; }
+body.mobile-mode .sidebar { display:none; }   /* hidden — content shown in panel instead */
+body.mobile-mode .right-pane { height:100%; display:flex; flex-direction:column; }
+body.mobile-mode .map-wrap { flex:1; min-height:0; }
+body.mobile-mode .grid-pane { display:none; } /* hidden — shown in panel */
 
-/* Desktop sidebar hidden; mobile uses a bottom sheet */
-body.mobile-mode .main {
-  display: block;
-  position: relative;
-  overflow: hidden;
-}
-body.mobile-mode .sidebar {
+/* Map control buttons */
+body.mobile-mode .aerial-btn { top:8px; right:44px; font-size:.52rem; padding:3px 7px; }
+body.mobile-mode .flood-btn  { top:8px; right:130px; font-size:.52rem; padding:3px 7px; }
+
+/* ── MOBILE PANEL (bottom drawer) ── */
+.mob-panel {
   display: none;
 }
-body.mobile-mode .right-pane {
-  height: 100%;
+body.mobile-mode .mob-panel {
   display: flex;
   flex-direction: column;
-}
-body.mobile-mode .map-wrap {
-  flex: 1;
-  min-height: 0;
-}
-
-/* Grid pane hidden on mobile by default */
-body.mobile-mode .grid-pane {
-  display: none;
-}
-
-/* ── BOTTOM SHEET ── */
-.mob-sheet {
   position: fixed;
-  bottom: 52px; /* above tab bar */
-  left: 0; right: 0;
+  left: 0; right: 0; bottom: 0;
   z-index: 2000;
   background: var(--panel);
-  border-top: 2px solid var(--accent);
   border-radius: 14px 14px 0 0;
-  max-height: 75dvh;
-  display: flex;
-  flex-direction: column;
-  transform: translateY(100%);
-  transition: transform .3s ease;
-  will-change: transform;
+  border-top: 2px solid var(--accent);
+  /* Height controlled by JS via --panel-h CSS var */
+  height: var(--mob-panel-h, 320px);
+  max-height: 88dvh;
+  min-height: 88px;
+  transition: height .25s ease;
+  will-change: height;
 }
-.mob-sheet.open {
-  transform: translateY(0);
-}
-.mob-sheet-handle {
-  width: 36px; height: 4px;
-  background: var(--border);
-  border-radius: 2px;
-  margin: 8px auto 4px;
-  flex-shrink: 0;
-}
-.mob-sheet-title {
-  font-family: 'IBM Plex Mono', monospace;
-  font-size: .62rem;
-  color: var(--muted);
-  text-transform: uppercase;
-  letter-spacing: .1em;
-  padding: 0 14px 6px;
-  flex-shrink: 0;
-  border-bottom: 1px solid var(--border);
-}
-.mob-sheet-body {
-  flex: 1;
-  overflow-y: auto;
-  -webkit-overflow-scrolling: touch;
-}
-.mob-sheet-body::-webkit-scrollbar { display: none; }
+body.mobile-mode .mob-panel.no-transition { transition: none; }
 
-/* ── TAB BAR ── */
-.mob-tab-bar {
-  display: none;
-}
-body.mobile-mode .mob-tab-bar {
-  display: flex;
-  position: fixed;
-  bottom: 0; left: 0; right: 0;
-  height: 52px;
-  background: var(--panel);
-  border-top: 1px solid var(--border);
-  z-index: 3000;
-}
-.mob-tab {
-  flex: 1;
+/* Drag handle */
+.mob-drag-handle {
+  flex-shrink: 0;
+  padding: 8px 0 4px;
+  cursor: ns-resize;
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
-  gap: 2px;
-  cursor: pointer;
-  border: none;
-  background: transparent;
-  color: var(--muted);
-  font-family: 'IBM Plex Mono', monospace;
-  font-size: .5rem;
-  letter-spacing: .04em;
-  transition: color .15s;
+  gap: 3px;
   -webkit-tap-highlight-color: transparent;
 }
-.mob-tab .mob-tab-icon {
-  font-size: 1.1rem;
-  line-height: 1;
+.mob-drag-pip {
+  width: 36px; height: 4px;
+  background: var(--border);
+  border-radius: 2px;
+  transition: background .15s;
 }
+.mob-drag-handle:active .mob-drag-pip,
+.mob-drag-handle.dragging .mob-drag-pip { background: var(--accent); }
+
+/* Tab bar inside the panel header */
+.mob-tabs {
+  display: flex;
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--border);
+}
+.mob-tab {
+  flex: 1;
+  padding: 7px 4px 6px;
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--muted);
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: .55rem;
+  letter-spacing: .04em;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  transition: color .15s, border-color .15s;
+}
+.mob-tab .mob-icon { font-size: 1rem; line-height: 1; }
 .mob-tab.active {
   color: var(--accent);
-}
-.mob-tab.active .mob-tab-icon {
-  color: var(--accent);
+  border-bottom-color: var(--accent);
 }
 
-/* ── MOBILE MAP BUTTONS ── */
-body.mobile-mode .aerial-btn {
-  top: 8px; right: 44px;
-  font-size: .55rem;
-  padding: 4px 7px;
+/* Tab content areas */
+.mob-tab-content {
+  flex: 1;
+  overflow: hidden;
+  position: relative;
 }
-body.mobile-mode .flood-btn {
-  top: 8px; right: 130px;
-  font-size: .55rem;
-  padding: 4px 7px;
+.mob-pane {
+  position: absolute;
+  inset: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  display: none;
+  padding-bottom: 8px;
 }
-body.mobile-mode .leaflet-control-zoom {
-  margin-top: 8px !important;
-  margin-right: 6px !important;
+.mob-pane.active { display: block; }
+.mob-pane::-webkit-scrollbar { display: none; }
+
+/* Fetch button — sticky at bottom of filters pane */
+.mob-fetch-strip {
+  position: sticky;
+  bottom: 0;
+  padding: 8px 14px 10px;
+  background: var(--panel);
+  border-top: 1px solid var(--border);
+}
+.mob-fetch-strip .btn { margin-top: 0; }
+
+/* Stats strip in results pane */
+body.mobile-mode .mob-stats-strip {
+  display: flex;
+  gap: 0;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+body.mobile-mode .mob-stats-strip .s-cell {
+  flex: 1;
+  padding: 6px 8px;
+  text-align: center;
+  border-right: 1px solid var(--border);
+}
+body.mobile-mode .mob-stats-strip .s-cell:last-child { border-right: none; }
+
+/* Hide desktop elements we've duplicated in mobile panel */
+body.mobile-mode .source-badge { display: none; }
+
+/* Larger touch targets in results list */
+body.mobile-mode .result-item { padding: 12px 14px; }
+
+/* Grid in mobile scrolls horizontally */
+.mob-grid-wrap {
+  overflow-x: auto;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  height: 100%;
+  padding-bottom: 4px;
+}
+.mob-grid-wrap::-webkit-scrollbar {
+  height: 4px; width: 4px;
+}
+.mob-grid-wrap::-webkit-scrollbar-thumb { background: var(--border); }
+
+/* Comp slots strip */
+body.mobile-mode .sel-bar {
+  bottom: 0;
+  left: 0; right: 0;
+  border-radius: 0;
+  font-size: .58rem;
+  padding: 8px 12px;
+  gap: 8px;
 }
 
-/* Mobile result items slightly larger touch targets */
-body.mobile-mode .result-item {
-  padding: 11px 14px;
-}
-
-/* Mobile query panel padding */
-body.mobile-mode .query-panel {
-  padding: 10px 14px 6px;
-}
-body.mobile-mode .field-row {
-  margin-bottom: 10px;
-}
 </style>
 </head>
 <body>
@@ -1666,7 +1672,7 @@ function render(){
   updateStats(filtered);
   updateList(filtered);
   renderGrid();
-  mobRefreshSheet();
+  mobOnRender();
   document.getElementById('results-header').textContent =
     `${filtered.length.toLocaleString()} of ${allSales.length.toLocaleString()} sales`;
 }
@@ -2324,6 +2330,7 @@ function toggleSelMode(){
   btn.textContent = selModeOn ? '☑ Selecting…' : '☑ Select Comps';
   document.getElementById('sel-bar').classList.toggle('hidden', !selModeOn && selectedComps.length === 0);
   renderGrid(); // sync checkbox state in grid
+  if(IS_MOBILE) mobRenderComps();
   if(!selModeOn && selectedComps.length === 0) clearSelection();
   toast(selModeOn ? 'Click up to 5 sales on the map or list to select comps' : 'Selection mode off');
 }
@@ -2662,91 +2669,250 @@ async function buildAndDownloadDocx(comps){
 
 
 // ── MOBILE LAYOUT ─────────────────────────────────────────────────────────────
+// Detect touch device under 900px — covers all phones and most tablets
 const IS_MOBILE = ('ontouchstart' in window || navigator.maxTouchPoints > 0) && window.innerWidth < 900;
 
 if(IS_MOBILE){
   document.body.classList.add('mobile-mode');
+  mobInit();
 }
 
-let _mobActiveTab = 'map';
+// ── Mobile panel state ─────────────────────────────────────────────────────
+let _mobPane     = 'filters';
+let _mobPanelH   = 320;
+const MOB_SNAP   = { collapsed: 88, half: 320, full: Math.round(window.innerHeight * 0.82) };
 
-function mobTab(tab){
-  if(!IS_MOBILE) return;
-  _mobActiveTab = tab;
+function mobInit(){
+  // Set initial panel height
+  mobSetHeight(MOB_SNAP.half, true);
 
+  // Sync initial date values from desktop inputs
+  const today = new Date();
+  const fmt = d => String(d.getMonth()+1).padStart(2,'0')+'/'+String(d.getDate()).padStart(2,'0')+'/'+d.getFullYear();
+  document.getElementById('mob-date-to').value   = fmt(today);
+  document.getElementById('mob-date-from').value = document.getElementById('q-date-from')?.value || '01/01/2023';
+
+  // Wire drag handle
+  const handle = document.getElementById('mob-drag-handle');
+  if(handle) mobInitDrag(handle);
+}
+
+function mobSetHeight(h, instant){
+  h = Math.max(88, Math.min(Math.round(window.innerHeight * 0.88), h));
+  _mobPanelH = h;
+  const panel = document.getElementById('mob-panel');
+  if(!panel) return;
+  if(instant){ panel.classList.add('no-transition'); panel.style.height = h+'px'; requestAnimationFrame(()=>panel.classList.remove('no-transition')); }
+  else        { panel.style.height = h+'px'; }
+  document.body.style.setProperty('--mob-panel-h', h+'px');
+  setTimeout(()=>map.invalidateSize(), instant ? 0 : 260);
+}
+
+function mobShowPane(name){
+  _mobPane = name;
   // Update tab active states
-  ['map','filter','results','grid'].forEach(t => {
-    document.getElementById('mob-tab-' + t)?.classList.toggle('active', t === tab);
+  ['filters','results','grid','comps'].forEach(t => {
+    document.getElementById('mob-tab-'+t)?.classList.toggle('active', t === name);
+    const p = document.getElementById('mob-pane-'+t);
+    if(p) p.classList.toggle('active', t === name);
   });
+  // Expand panel if it was collapsed
+  if(_mobPanelH < 160) mobSetHeight(MOB_SNAP.half);
+  // Refresh content
+  if(name === 'results') mobRenderResults();
+  if(name === 'grid')    mobRenderGrid();
+  if(name === 'comps')   mobRenderComps();
+}
 
-  const sheet = document.getElementById('mob-sheet');
-  const title = document.getElementById('mob-sheet-title');
-  const sheetBody = document.getElementById('mob-sheet-body');
+// ── Drag to resize ─────────────────────────────────────────────────────────
+function mobInitDrag(handle){
+  let dragging=false, startY=0, startH=0;
 
-  if(tab === 'map'){
-    sheet.classList.remove('open');
-    // Return sidebar children to sidebar (in case they were moved)
-    const sidebar  = document.querySelector('.sidebar');
-    const queryPanel = document.getElementById('mob-query-slot');
-    const resultsSlot = document.getElementById('mob-results-slot');
-    return;
+  function onStart(y){
+    dragging = true; startY = y; startH = _mobPanelH;
+    handle.classList.add('dragging');
+    document.body.style.userSelect = 'none';
+  }
+  function onMove(y){
+    if(!dragging) return;
+    const delta = startY - y;
+    mobSetHeight(startH + delta, true);
+  }
+  function onEnd(){
+    if(!dragging) return;
+    dragging = false;
+    handle.classList.remove('dragging');
+    document.body.style.userSelect = '';
+    // Snap to nearest preset
+    const snaps = Object.values(MOB_SNAP);
+    const nearest = snaps.reduce((a,b) => Math.abs(a-_mobPanelH) < Math.abs(b-_mobPanelH) ? a : b);
+    mobSetHeight(nearest);
   }
 
-  sheet.classList.add('open');
+  handle.addEventListener('mousedown',  e => { onStart(e.clientY); e.preventDefault(); });
+  document.addEventListener('mousemove', e => onMove(e.clientY));
+  document.addEventListener('mouseup',   () => onEnd());
 
-  // Move actual live DOM elements into sheet — preserves event listeners and reactivity
-  if(tab === 'filter'){
-    title.textContent = 'Query Filters';
-    sheetBody.innerHTML = '';
-    // Move the real sidebar into the sheet body
-    const sidebar = document.querySelector('.sidebar');
-    if(sidebar) sheetBody.appendChild(sidebar);
-  }
+  handle.addEventListener('touchstart', e => { onStart(e.touches[0].clientY); }, { passive:true });
+  document.addEventListener('touchmove', e => { if(dragging) { onMove(e.touches[0].clientY); e.preventDefault(); } }, { passive:false });
+  document.addEventListener('touchend',  () => onEnd());
 
-  if(tab === 'results'){
-    title.textContent = 'Results (' + (typeof allSales !== 'undefined' ? allSales.length : 0) + ')';
-    sheetBody.innerHTML = '';
-    // Move filter chips + results list into sheet
-    const filterBar = document.getElementById('filter-bar');
-    const resHeader = document.getElementById('results-header')?.parentElement;
-    const resList   = document.getElementById('results-list');
-    const statsBar  = document.querySelector('.stats-bar');
-    if(statsBar)  sheetBody.appendChild(statsBar);
-    if(filterBar) sheetBody.appendChild(filterBar);
-    if(resHeader) sheetBody.appendChild(resHeader);
-    if(resList)   sheetBody.appendChild(resList);
-  }
-
-  if(tab === 'grid'){
-    title.textContent = 'Sales Grid';
-    sheetBody.innerHTML = '';
-    const gridScroll = document.querySelector('.grid-scroll');
-    const gridCount  = document.getElementById('grid-count');
-    const hdr = document.createElement('div');
-    hdr.style.cssText = 'padding:6px 12px;font-family:"IBM Plex Mono",monospace;font-size:.58rem;color:var(--muted);border-bottom:1px solid var(--border);flex-shrink:0;';
-    hdr.textContent = gridCount?.textContent || 'Sales Grid';
-    sheetBody.appendChild(hdr);
-    if(gridScroll){
-      gridScroll.style.cssText = 'overflow-x:auto;overflow-y:auto;-webkit-overflow-scrolling:touch;';
-      sheetBody.appendChild(gridScroll);
+  // Double-tap handle to cycle snap points
+  let lastTap = 0;
+  handle.addEventListener('click', () => {
+    const now = Date.now();
+    if(now - lastTap < 400){
+      const snaps = [MOB_SNAP.collapsed, MOB_SNAP.half, MOB_SNAP.full];
+      const idx   = snaps.indexOf(_mobPanelH);
+      mobSetHeight(snaps[(idx+1) % snaps.length]);
     }
-  }
+    lastTap = now;
+  });
 }
 
-// On mobile, tapping the map closes the sheet
-if(IS_MOBILE){
-  document.getElementById('map')?.addEventListener('click', () => {
-    if(_mobActiveTab !== 'map') mobTab('map');
+// ── Sync mobile filter inputs → desktop inputs (which runQuery reads) ──────
+function syncMobFilter(){
+  const sync = (mobId, desktopId) => {
+    const m = document.getElementById(mobId);
+    const d = document.getElementById(desktopId);
+    if(m && d) d.value = m.value;
+  };
+  sync('mob-date-from',   'q-date-from');
+  sync('mob-date-to',     'q-date-to');
+  sync('mob-price-min',   'q-price-min');
+  sync('mob-acres-min',   'q-acres-min');
+  sync('mob-acres-max',   'q-acres-max');
+  sync('mob-impv-max',    'q-impv-max');
+  sync('mob-razed',       'q-razed');
+  sync('mob-max-records', 'q-max-records');
+}
+
+function mobFetch(){
+  syncMobFilter();
+  runQuery();
+  // Switch to results after fetch starts
+  setTimeout(() => mobShowPane('results'), 500);
+}
+
+// ── Results pane ──────────────────────────────────────────────────────────
+function mobRenderResults(){
+  if(!IS_MOBILE) return;
+  const filtered = typeof getFiltered === 'function' ? getFiltered() : allSales || [];
+  const countEl  = document.getElementById('mob-results-count');
+  if(countEl) countEl.textContent = filtered.length.toLocaleString() + ' results';
+
+  // Filter chips — sync from desktop filter-bar
+  const chips    = document.getElementById('mob-filter-chips');
+  const srcChips = document.getElementById('filter-bar');
+  if(chips && srcChips) chips.innerHTML = srcChips.innerHTML;
+
+  // Results list
+  const listEl = document.getElementById('mob-results-list');
+  if(!listEl) return;
+  const top = [...filtered].sort((a,b) => b.sale_price - a.sale_price).slice(0, 80);
+  listEl.innerHTML = '';
+  top.forEach(s => {
+    const color = priceColor(s.sale_price);
+    const el    = document.createElement('div');
+    el.className = 'result-item';
+    el.innerHTML = `
+      <div class="result-addr">${s.razed_flag ? '🔥 ' : ''}${s.address||s.parcel}</div>
+      <div class="result-row">
+        <span class="result-price" style="color:${color}">${fmtFull(s.sale_price)}</span>
+        <span class="result-date">${fmtDate(s.sale_date)}</span>
+      </div>
+      <div class="result-sub">${s.acres||0} ac · ${(s.class_desc||'').slice(0,22)} · ${(s.district||'').slice(0,18)}</div>
+      <div class="result-sub"><a href="${recorderUrl(s.owner,s.sale_date)}" target="_blank" onclick="event.stopPropagation()" style="color:var(--accent2);font-size:.54rem;text-decoration:none">Recorder Data</a></div>
+    `;
+    el.addEventListener('click', e => {
+      if(e.target.tagName === 'A') return;
+      if(selModeOn){ toggleCompSelection(s); return; }
+      map.setView([s.lat, s.lng], 16);
+      mobSetHeight(MOB_SNAP.collapsed); // collapse panel to see map
+    });
+    listEl.appendChild(el);
   });
 
-  // After data loads, auto-refresh results tab content
-  const _origRender = typeof render !== 'undefined' ? render : null;
+  // Update sel button state
+  const selBtn = document.getElementById('mob-sel-btn');
+  if(selBtn) selBtn.disabled = filtered.length === 0;
 }
 
-// Re-render sheet content when results update (mobile)
-function mobRefreshSheet(){
+// ── Grid pane ─────────────────────────────────────────────────────────────
+function mobRenderGrid(){
   if(!IS_MOBILE) return;
-  if(_mobActiveTab !== 'map') mobTab(_mobActiveTab);
+  const filtered = typeof getFiltered === 'function' ? getFiltered() : allSales || [];
+  const countEl  = document.getElementById('mob-grid-count');
+  if(countEl) countEl.textContent = filtered.length.toLocaleString() + ' sales';
+
+  const rows = filtered.map(s => ({...s, ppa: s.acres > 0 ? s.sale_price / s.acres : 0}));
+  rows.sort((a,b) => b.sale_date - a.sale_date);
+
+  const tbody = document.getElementById('mob-sg-body');
+  if(!tbody) return;
+  tbody.innerHTML = '';
+  rows.forEach(s => {
+    const isSelected = typeof selectedComps !== 'undefined' && selectedComps.some(c => c.parcel === s.parcel);
+    const tr  = document.createElement('tr');
+    if(isSelected) tr.classList.add('sg-selected');
+    if(s.razed_flag) tr.classList.add('sg-flagged');
+    const ppa = s.acres > 0 ? '$' + Math.round(s.sale_price/s.acres).toLocaleString() : '—';
+    tr.innerHTML = `
+      <td style="text-align:center;padding:4px 5px">
+        <input type="checkbox" class="sg-check" ${isSelected?'checked':''}
+          onclick="event.stopPropagation();sgToggleComp('${s.parcel}',this)">
+      </td>
+      <td>${s.razed_flag?'🔥 ':''}${(s.address||s.parcel).slice(0,22)}</td>
+      <td class="td-muted">${fmtDate(s.sale_date)}</td>
+      <td class="td-price">${fmtFull(s.sale_price)}</td>
+      <td class="td-muted">${s.acres||'—'}</td>
+      <td>${ppa}</td>
+      <td class="td-muted">${(s.class_desc||'').slice(0,16)}</td>
+      <td style="text-align:center">${s.razed_score>0?s.razed_score:''}</td>
+      <td><a href="${recorderUrl(s.owner,s.sale_date)}" target="_blank" onclick="event.stopPropagation()" style="color:var(--accent2);text-decoration:none;font-size:.54rem">📋</a></td>
+    `;
+    tr.addEventListener('click', e => {
+      if(e.target.type==='checkbox'||e.target.tagName==='A') return;
+      map.setView([s.lat, s.lng], 16);
+      mobSetHeight(MOB_SNAP.collapsed);
+    });
+    tbody.appendChild(tr);
+  });
+}
+
+// ── Comps pane ────────────────────────────────────────────────────────────
+function mobRenderComps(){
+  if(!IS_MOBILE) return;
+  const slots = document.getElementById('mob-comp-slots');
+  const genBtn = document.getElementById('mob-gen-btn');
+  if(!slots) return;
+
+  const comps = typeof selectedComps !== 'undefined' ? selectedComps : [];
+  slots.innerHTML = '';
+  for(let i=0; i<5; i++){
+    const s   = comps[i];
+    const div = document.createElement('div');
+    div.style.cssText = 'flex:1;min-width:120px;padding:8px 10px;border:1px solid '+(s?'var(--accent2)':'var(--border)')+';border-radius:4px;font-family:"IBM Plex Mono",monospace;font-size:.55rem;color:'+(s?'var(--text)':'var(--muted)')+';cursor:'+(s?'pointer':'default');
+    div.innerHTML = s
+      ? `<div style="font-weight:700;color:var(--accent2)">Comp ${i+1}</div><div>${(s.address||s.parcel).slice(0,20)}</div><div style="color:var(--accent)">${fmtFull(s.sale_price)}</div><div style="color:var(--muted);font-size:.5rem">tap to remove</div>`
+      : `<div style="color:var(--border);font-size:1.2rem;text-align:center">${i+1}</div><div style="text-align:center;font-size:.5rem">empty</div>`;
+    if(s) div.onclick = () => { sgToggleComp(s.parcel, null); mobRenderComps(); };
+    slots.appendChild(div);
+  }
+  if(genBtn) genBtn.disabled = comps.length === 0;
+}
+
+// ── Hook into render() to refresh mobile panes ────────────────────────────
+function mobOnRender(){
+  if(!IS_MOBILE) return;
+  if(_mobPane === 'results') mobRenderResults();
+  if(_mobPane === 'grid')    mobRenderGrid();
+  if(_mobPane === 'comps')   mobRenderComps();
+  // Sync sel button
+  const selBtn = document.getElementById('mob-sel-btn');
+  if(selBtn){ selBtn.disabled = (allSales||[]).length === 0; selBtn.textContent = selModeOn ? '☑ Selecting…' : '☑ Select Comps'; }
+  const genBtn = document.getElementById('mob-gen-btn');
+  if(genBtn) genBtn.disabled = !(selectedComps?.length > 0);
 }
 
 // ── INIT ──────────────────────────────────────────────────────────────────────
@@ -2755,28 +2921,153 @@ const _t = new Date();
 document.getElementById('q-date-to').value =
   String(_t.getMonth()+1).padStart(2,'0')+'/'+String(_t.getDate()).padStart(2,'0')+'/'+_t.getFullYear();
 </script>
-<!-- ── MOBILE TAB BAR ── -->
-<div class="mob-tab-bar" id="mob-tab-bar">
-  <button class="mob-tab active" id="mob-tab-map"    onclick="mobTab('map')">
-    <span class="mob-tab-icon">🗺</span><span>Map</span>
-  </button>
-  <button class="mob-tab"        id="mob-tab-filter" onclick="mobTab('filter')">
-    <span class="mob-tab-icon">🔍</span><span>Filters</span>
-  </button>
-  <button class="mob-tab"        id="mob-tab-results" onclick="mobTab('results')">
-    <span class="mob-tab-icon">📋</span><span>Results</span>
-  </button>
-  <button class="mob-tab"        id="mob-tab-grid"   onclick="mobTab('grid')">
-    <span class="mob-tab-icon">⊞</span><span>Grid</span>
-  </button>
-</div>
+<!-- ══════════════════════════════════════════════════
+     MOBILE PANEL  — self-contained, never moves DOM
+     ══════════════════════════════════════════════════ -->
+<div class="mob-panel" id="mob-panel">
 
-<!-- ── MOBILE BOTTOM SHEET ── -->
-<div class="mob-sheet" id="mob-sheet">
-  <div class="mob-sheet-handle"></div>
-  <div class="mob-sheet-title" id="mob-sheet-title">Filters</div>
-  <div class="mob-sheet-body"  id="mob-sheet-body"></div>
-</div>
+  <!-- Drag handle -->
+  <div class="mob-drag-handle" id="mob-drag-handle">
+    <div class="mob-drag-pip"></div>
+  </div>
 
+  <!-- Tab bar -->
+  <div class="mob-tabs">
+    <button class="mob-tab active" id="mob-tab-filters" onclick="mobShowPane('filters')">
+      <span class="mob-icon">🔍</span>Filters
+    </button>
+    <button class="mob-tab" id="mob-tab-results" onclick="mobShowPane('results')">
+      <span class="mob-icon">📋</span>Results
+    </button>
+    <button class="mob-tab" id="mob-tab-grid" onclick="mobShowPane('grid')">
+      <span class="mob-icon">⊞</span>Grid
+    </button>
+    <button class="mob-tab" id="mob-tab-comps" onclick="mobShowPane('comps')">
+      <span class="mob-icon">☑</span>Comps
+    </button>
+  </div>
+
+  <!-- Pane content area -->
+  <div class="mob-tab-content">
+
+    <!-- FILTERS PANE -->
+    <div class="mob-pane active" id="mob-pane-filters">
+      <!-- Query fields duplicated here for mobile — bound by ID, same inputs -->
+      <div style="padding:10px 14px 0">
+        <div class="field-label">Sale Date Range</div>
+        <div class="range-row" style="margin-top:4px">
+          <input type="text" id="mob-date-from" placeholder="MM/DD/YYYY" oninput="syncMobFilter()">
+          <input type="text" id="mob-date-to"   placeholder="MM/DD/YYYY" oninput="syncMobFilter()">
+        </div>
+      </div>
+      <div style="padding:8px 14px 0">
+        <div class="field-label">Min Sale Price ($)</div>
+        <input type="number" id="mob-price-min" value="5000" step="1000" style="width:100%;margin-top:4px" oninput="syncMobFilter()">
+      </div>
+      <div style="padding:8px 14px 0">
+        <div class="field-label">Acreage Range</div>
+        <div class="range-row" style="margin-top:4px">
+          <input type="number" id="mob-acres-min" placeholder="Min ac" step="0.1" oninput="syncMobFilter()">
+          <input type="number" id="mob-acres-max" placeholder="Max ac" step="0.1" oninput="syncMobFilter()">
+        </div>
+      </div>
+      <div style="padding:8px 14px 0">
+        <div class="field-label">Max Improvement Value</div>
+        <select id="mob-impv-max" style="width:100%;margin-top:4px" onchange="syncMobFilter()">
+          <option value="-1" selected>Any (no limit)</option>
+          <option value="0">$0 (strictly vacant)</option>
+          <option value="1000">≤ $1,000</option>
+          <option value="5000">≤ $5,000</option>
+          <option value="10000">≤ $10,000</option>
+          <option value="25000">≤ $25,000</option>
+          <option value="50000">≤ $50,000</option>
+          <option value="100000">≤ $100,000</option>
+        </select>
+      </div>
+      <div style="padding:8px 14px 0">
+        <div class="field-label">Razed / Redeveloped Sites</div>
+        <select id="mob-razed" style="width:100%;margin-top:4px" onchange="syncMobFilter()">
+          <option value="all" selected>Show all sales</option>
+          <option value="only">Possible razed only</option>
+          <option value="exclude">Exclude razed sites</option>
+        </select>
+      </div>
+      <div style="padding:8px 14px 0">
+        <div class="field-label">Vacant Land Class</div>
+        <select id="mob-class" style="width:100%;margin-top:4px" onchange="syncMobFilter()">
+          <option value="all" selected>All Vacant Land</option>
+          <option value="100">100 – Residential Vacant</option>
+          <option value="110">110 – Residential Vacant 0-9.9</option>
+          <option value="300">300 – Commercial Vacant</option>
+          <option value="400">400 – Industrial Vacant</option>
+          <option value="500">500 – Residential Vacant Lot</option>
+        </select>
+      </div>
+      <div style="padding:8px 14px 0">
+        <div class="field-label">Max Records</div>
+        <select id="mob-max-records" style="width:100%;margin-top:4px" onchange="syncMobFilter()">
+          <option value="500">500</option>
+          <option value="1000" selected>1,000</option>
+          <option value="2000">2,000</option>
+          <option value="5000">5,000</option>
+        </select>
+      </div>
+      <!-- Sticky fetch button -->
+      <div class="mob-fetch-strip">
+        <button class="btn btn-fetch" id="mob-btn-fetch" onclick="mobFetch()">⬇ Fetch Live Data</button>
+      </div>
+    </div>
+
+    <!-- RESULTS PANE -->
+    <div class="mob-pane" id="mob-pane-results">
+      <div style="padding:6px 12px;font-family:'IBM Plex Mono',monospace;font-size:.58rem;color:var(--muted);border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center">
+        <span id="mob-results-count">0 results</span>
+        <button id="mob-sel-btn" class="sel-mode-btn" onclick="toggleSelMode()" disabled style="font-size:.52rem;padding:3px 8px">☑ Select Comps</button>
+      </div>
+      <div id="mob-filter-chips" style="padding:4px 8px;border-bottom:1px solid var(--border);display:flex;flex-wrap:wrap;gap:4px;font-size:.56rem;min-height:28px;"></div>
+      <div id="mob-results-list" style="padding-bottom:4px;"></div>
+    </div>
+
+    <!-- GRID PANE -->
+    <div class="mob-pane" id="mob-pane-grid">
+      <div style="padding:5px 10px;font-family:'IBM Plex Mono',monospace;font-size:.56rem;color:var(--muted);border-bottom:1px solid var(--border);">
+        <span id="mob-grid-count">Run query to populate</span>
+      </div>
+      <div class="mob-grid-wrap">
+        <table class="sg" id="mob-sg-table">
+          <thead>
+            <tr>
+              <th style="width:28px;text-align:center;cursor:default"></th>
+              <th onclick="sortGrid('address')">Address</th>
+              <th onclick="sortGrid('sale_date')">Date</th>
+              <th onclick="sortGrid('sale_price')">Price</th>
+              <th onclick="sortGrid('acres')">Acres</th>
+              <th onclick="sortGrid('ppa')">$/Ac</th>
+              <th onclick="sortGrid('class_desc')">Class</th>
+              <th onclick="sortGrid('razed_score')" title="Razed score">🔥</th>
+              <th style="cursor:default">Deed</th>
+            </tr>
+          </thead>
+          <tbody id="mob-sg-body"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- COMPS PANE -->
+    <div class="mob-pane" id="mob-pane-comps">
+      <div style="padding:8px 12px;font-family:'IBM Plex Mono',monospace;font-size:.58rem;color:var(--muted);border-bottom:1px solid var(--border)">
+        Select up to 5 comps from the Results or map, then generate a data sheet.
+      </div>
+      <div id="mob-comp-slots" style="padding:10px 12px;display:flex;gap:8px;flex-wrap:wrap;"></div>
+      <div style="padding:0 12px 10px;">
+        <button class="btn btn-fetch" id="mob-gen-btn" onclick="generateSalesSheet()" disabled style="background:var(--accent2)">⬇ Generate Sales Sheet</button>
+      </div>
+      <div style="padding:0 12px">
+        <button class="btn btn-clear" onclick="clearSelection();mobRenderComps()">Clear Selection</button>
+      </div>
+    </div>
+
+  </div><!-- .mob-tab-content -->
+</div><!-- .mob-panel -->
 </body>
 </html>
