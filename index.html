@@ -2691,6 +2691,11 @@ function mobInit(){
   const fmt = d => String(d.getMonth()+1).padStart(2,'0')+'/'+String(d.getDate()).padStart(2,'0')+'/'+d.getFullYear();
   document.getElementById('mob-date-to').value   = fmt(today);
   document.getElementById('mob-date-from').value = document.getElementById('q-date-from')?.value || '01/01/2023';
+  // Sync class and limit from desktop defaults
+  const deskClass = document.getElementById('q-class')?.value;
+  const deskLimit = document.getElementById('q-limit')?.value;
+  if(deskClass) document.getElementById('mob-class').value = deskClass;
+  if(deskLimit) document.getElementById('mob-max-records').value = deskLimit;
 
   // Wire drag handle
   const handle = document.getElementById('mob-drag-handle');
@@ -2784,7 +2789,9 @@ function syncMobFilter(){
   sync('mob-acres-max',   'q-acres-max');
   sync('mob-impv-max',    'q-impv-max');
   sync('mob-razed',       'q-razed');
-  sync('mob-max-records', 'q-max-records');
+  sync('mob-flood',       'q-flood');
+  sync('mob-class',       'q-class');
+  sync('mob-max-records', 'q-limit');
 }
 
 function mobFetch(){
@@ -2993,14 +3000,28 @@ document.getElementById('q-date-to').value =
         </select>
       </div>
       <div style="padding:8px 14px 0">
+        <div class="field-label">Flood Zone</div>
+        <select id="mob-flood" style="width:100%;margin-top:4px" onchange="syncMobFilter()">
+          <option value="all" selected>All (any flood status)</option>
+          <option value="none">Not in flood zone</option>
+          <option value="flood">In flood zone only</option>
+        </select>
+      </div>
+      <div style="padding:8px 14px 0">
         <div class="field-label">Vacant Land Class</div>
         <select id="mob-class" style="width:100%;margin-top:4px" onchange="syncMobFilter()">
-          <option value="all" selected>All Vacant Land</option>
-          <option value="100">100 – Residential Vacant</option>
-          <option value="110">110 – Residential Vacant 0-9.9</option>
-          <option value="300">300 – Commercial Vacant</option>
-          <option value="400">400 – Industrial Vacant</option>
-          <option value="500">500 – Residential Vacant Lot</option>
+          <option value="VACANT" selected>All Vacant Land</option>
+          <option value="500">500 — Residential Vacant Lot</option>
+          <option value="501">501 — Res. Unplatted 0–9.9 ac</option>
+          <option value="502">502 — Res. Unplatted 10–19.9 ac</option>
+          <option value="503">503 — Res. Unplatted 20–29.9 ac</option>
+          <option value="504">504 — Res. Unplatted 30–39.9 ac</option>
+          <option value="505">505 — Res. Unplatted 40+ ac</option>
+          <option value="100">100 — Agricultural Vacant</option>
+          <option value="110">110 — Agricultural Vacant (CAUV)</option>
+          <option value="300">300 — Industrial Vacant</option>
+          <option value="400">400 — Commercial Vacant</option>
+          <option value="ALL">All Property Classes (unfiltered)</option>
         </select>
       </div>
       <div style="padding:8px 14px 0">
@@ -3009,6 +3030,7 @@ document.getElementById('q-date-to').value =
           <option value="500">500</option>
           <option value="1000" selected>1,000</option>
           <option value="2000">2,000</option>
+          <option value="3000">3,000</option>
           <option value="5000">5,000</option>
         </select>
       </div>
