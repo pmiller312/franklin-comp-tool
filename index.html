@@ -504,6 +504,88 @@ body.mobile-mode .sel-bar {
   gap: 8px;
 }
 
+
+/* ── COLLAPSIBLE SIDEBAR ── */
+.main { transition: grid-template-columns .25s ease; }
+.main.sidebar-hidden { grid-template-columns: 0px 1fr; }
+.main.sidebar-hidden .sidebar { overflow: hidden; opacity: 0; pointer-events: none; }
+
+.sidebar-toggle {
+  position: absolute;
+  top: 50%;
+  left: 300px;
+  transform: translateY(-50%);
+  z-index: 1500;
+  width: 18px; height: 52px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-left: none;
+  border-radius: 0 6px 6px 0;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  color: var(--muted);
+  font-size: .7rem;
+  transition: left .25s ease, background .15s, color .15s;
+  user-select: none;
+}
+.sidebar-toggle:hover { background: var(--border); color: var(--text); }
+.main.sidebar-hidden .sidebar-toggle { left: 0; }
+
+/* ── DISMISSABLE MAP OVERLAYS ── */
+.overlay-hide-btn {
+  position: absolute;
+  top: -8px; right: -8px;
+  width: 18px; height: 18px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  font-size: .65rem; color: var(--muted);
+  z-index: 10;
+  line-height: 1;
+  transition: background .12s, color .12s;
+}
+.overlay-hide-btn:hover { background: var(--danger); color: #fff; border-color: var(--danger); }
+.source-badge, .legend { position: absolute; } /* ensure relative positioning works */
+
+/* Restore button — shows when an overlay is hidden */
+.overlay-restore-bar {
+  position: absolute;
+  bottom: 20px; left: 12px;
+  z-index: 1001;
+  display: flex; gap: 5px; flex-wrap: wrap;
+}
+.overlay-restore-btn {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 3px 8px;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: .54rem;
+  color: var(--muted);
+  cursor: pointer;
+  transition: border-color .12s, color .12s;
+}
+.overlay-restore-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+/* ── RESIZABLE SIDEBAR ── */
+.sidebar-resize-handle {
+  position: absolute;
+  top: 0; bottom: 0;
+  right: -4px;
+  width: 8px;
+  cursor: ew-resize;
+  z-index: 1400;
+}
+.sidebar-resize-handle:hover::after,
+.sidebar-resize-handle.dragging::after {
+  content: '';
+  position: absolute;
+  left: 3px; top: 0; bottom: 0;
+  width: 2px;
+  background: var(--accent);
+}
 </style>
 </head>
 <body>
@@ -517,9 +599,12 @@ body.mobile-mode .sel-bar {
   </div>
 </header>
 
-<div class="main">
+<div class="main" id="main-layout">
+  <!-- Sidebar collapse toggle -->
+  <button class="sidebar-toggle" id="sidebar-toggle" onclick="toggleSidebar()" title="Collapse/expand sidebar">◀</button>
   <!-- SIDEBAR -->
-  <div class="sidebar">
+  <div class="sidebar" id="sidebar">
+    <div class="sidebar-resize-handle" id="sidebar-resize-handle"></div>
 
     <!-- Query builder -->
     <div class="query-panel">
@@ -764,11 +849,13 @@ body.mobile-mode .sel-bar {
     <div id="map"></div>
     <button class="flood-btn"  id="flood-btn"  onclick="toggleFlood()">💧 FEMA Flood</button>
     <button class="aerial-btn" id="aerial-btn" onclick="cycleAerial()">🛰 Aerial</button>
-    <div class="source-badge" id="source-badge">
+    <div class="source-badge" id="source-badge" style="position:relative">
+      <button class="overlay-hide-btn" onclick="hideOverlay('source-badge')" title="Hide">×</button>
       <span class="warn">⚠ No data loaded</span><br>
       Set filters and click <strong>Fetch Live Data</strong>
     </div>
-    <div class="legend">
+    <div class="legend" id="map-legend" style="position:absolute">
+      <button class="overlay-hide-btn" onclick="hideOverlay('map-legend')" title="Hide">×</button>
       <div class="legend-title">Price Range</div>
       <div class="legend-row"><span class="ldot" style="width:5px;height:5px;background:#4ae8b0"></span>&lt; $50K</div>
       <div class="legend-row"><span class="ldot" style="width:7px;height:7px;background:#e8c84a"></span>$50K–$200K</div>
@@ -779,6 +866,9 @@ body.mobile-mode .sel-bar {
         <div style="display:flex;align-items:center;gap:7px;font-size:.6rem;color:var(--muted)"><span style="width:9px;height:9px;border-radius:50%;background:#e84ab0;flex-shrink:0;border:2px solid #e84ab0;display:inline-block"></span>Possible razed site</div>
       </div>
     </div>
+    <!-- Overlay restore bar -->
+    <div class="overlay-restore-bar" id="overlay-restore-bar"></div>
+
     <!-- REGRESSION DRAWER -->
     <div class="reg-drawer" id="reg-drawer">
       <div class="reg-drawer-header">
@@ -2971,6 +3061,96 @@ function mobOnRender(){
   if(genBtn) genBtn.disabled = !(selectedComps?.length > 0);
 }
 
+
+// ── PANEL CONTROLS ────────────────────────────────────────────────────────────
+
+// Sidebar collapse/expand
+let sidebarCollapsed = false;
+let sidebarWidth = 300;
+
+function toggleSidebar(){
+  sidebarCollapsed = !sidebarCollapsed;
+  const main   = document.getElementById('main-layout');
+  const toggle = document.getElementById('sidebar-toggle');
+  if(sidebarCollapsed){
+    main.classList.add('sidebar-hidden');
+    main.style.gridTemplateColumns = '0px 1fr';
+    toggle.textContent = '▶';
+    toggle.title = 'Show sidebar';
+  } else {
+    main.classList.remove('sidebar-hidden');
+    main.style.gridTemplateColumns = sidebarWidth + 'px 1fr';
+    toggle.textContent = '◀';
+    toggle.title = 'Hide sidebar';
+  }
+  toggle.style.left = sidebarCollapsed ? '0' : sidebarWidth + 'px';
+  setTimeout(() => map.invalidateSize(), 260);
+}
+
+// Sidebar drag-to-resize
+(function(){
+  const handle = document.getElementById('sidebar-resize-handle');
+  if(!handle) return;
+  let dragging = false, startX = 0, startW = 0;
+
+  handle.addEventListener('mousedown', e => {
+    dragging = true; startX = e.clientX; startW = sidebarWidth;
+    handle.classList.add('dragging');
+    document.body.style.cursor = 'ew-resize';
+    document.body.style.userSelect = 'none';
+    e.preventDefault();
+  });
+  document.addEventListener('mousemove', e => {
+    if(!dragging) return;
+    const w = Math.min(520, Math.max(180, startW + e.clientX - startX));
+    sidebarWidth = w;
+    document.getElementById('main-layout').style.gridTemplateColumns = w + 'px 1fr';
+    document.getElementById('sidebar-toggle').style.left = w + 'px';
+  });
+  document.addEventListener('mouseup', () => {
+    if(!dragging) return;
+    dragging = false;
+    handle.classList.remove('dragging');
+    document.body.style.cursor = '';
+    document.body.style.userSelect = '';
+    map.invalidateSize();
+  });
+})();
+
+// Hide/restore map overlays (source badge, legend)
+const _hiddenOverlays = {};
+
+function hideOverlay(id){
+  const el = document.getElementById(id);
+  if(!el) return;
+  const label = id === 'source-badge' ? 'Data Badge' : id === 'map-legend' ? 'Legend' : id;
+  _hiddenOverlays[id] = label;
+  el.style.display = 'none';
+  _renderRestoreBar();
+}
+
+function restoreOverlay(id){
+  const el = document.getElementById(id);
+  if(el) el.style.display = '';
+  delete _hiddenOverlays[id];
+  _renderRestoreBar();
+}
+
+function _renderRestoreBar(){
+  const bar = document.getElementById('overlay-restore-bar');
+  if(!bar) return;
+  bar.innerHTML = '';
+  Object.entries(_hiddenOverlays).forEach(([id, label]) => {
+    const btn = document.createElement('button');
+    btn.className = 'overlay-restore-btn';
+    btn.textContent = '+ ' + label;
+    btn.title = 'Show ' + label;
+    btn.onclick = () => restoreOverlay(id);
+    bar.appendChild(btn);
+  });
+}
+
+// ── END PANEL CONTROLS ────────────────────────────────────────────────────────
 // ── INIT ──────────────────────────────────────────────────────────────────────
 // Set default "to" date to today
 const _t = new Date();
