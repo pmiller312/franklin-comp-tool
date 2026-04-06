@@ -1000,6 +1000,7 @@ const COUNTY_CONFIG = {
     },
     dateField:  'SALEDATE',
     dateFormat: 'sql',      // DATE 'yyyy-mm-dd'
+    queryFormat: 'geojson', // MapServer supports geojson natively
     priceField: 'SALEPRICE',
     coordSR:    3735,   // Ohio State Plane South (feet) — convert to lat/lng
     coordConvert: true,
@@ -1047,9 +1048,11 @@ const COUNTY_CONFIG = {
     impvFilter: (impvMax) => '',
     dateField:  'SALE_DATE',
     dateFormat: 'timestamp', // Unix ms epoch
+    queryFormat: 'json',      // FeatureServer — use json, read .attributes
     priceField: 'SALE_AMOUNT',
     coordSR:    4326,   // already WGS84 lat/lng in geometry
     coordConvert: false,
+    singlePage: true,   // ArcGIS Online FeatureServer rejects resultOffset — fetch one page only
   },
 };
 
@@ -1475,40 +1478,64 @@ async function paginatedQuery(where, maxRecords){
   let offset = 0;
   let totalFetched = 0;
 
-  while(true){
-    const remaining = maxRecords - allFeatures.length;
-    if(remaining <= 0) break;
-    const count = Math.min(PAGE, remaining);
+  const cc = countyConf();
+  const qFmt = cc.queryFormat || 'geojson';
 
-    setProgress(
-      Math.min(90, 5 + (allFeatures.length/maxRecords)*85),
-      `Fetching records <span class="progress-count">${allFeatures.length.toLocaleString()}</span> → ${maxRecords.toLocaleString()}…`
-    );
-
-    const cc = countyConf();
+  if(cc.singlePage){
+    // ArcGIS Online FeatureServers (e.g. Cuyahoga) reject resultOffset with 400.
+    // Fetch one page up to maxRecordCount.
+    setProgress(30, `Fetching records…`);
     const params = new URLSearchParams({
       where,
       outFields: getFields(),
       returnGeometry: 'true',
       outSR: '4326',
-      f: 'geojson',
-      resultOffset: offset,
-      resultRecordCount: count,
+      f: qFmt,
+      resultRecordCount: Math.min(maxRecords, cc.maxRec || 2000),
       orderByFields: `${cc.fields.saleDate} DESC`,
     });
     const url = `${cc.endpoint}?${params}`;
     const resp = await fetch(url);
     if(!resp.ok) throw new Error(`HTTP ${resp.status}: ${resp.statusText}`);
-
     const data = await resp.json();
     if(data.error) throw new Error(data.error.message || JSON.stringify(data.error));
+    allFeatures = data.features || [];
 
-    const features = data.features || [];
-    allFeatures = allFeatures.concat(features);
+  } else {
+    // Standard offset pagination (Franklin County MapServer)
+    while(true){
+      const remaining = maxRecords - allFeatures.length;
+      if(remaining <= 0) break;
+      const count = Math.min(PAGE, remaining);
 
-    // If fewer returned than requested, we've hit the end
-    if(features.length < count) break;
-    offset += count;
+      setProgress(
+        Math.min(90, 5 + (allFeatures.length/maxRecords)*85),
+        `Fetching records <span class="progress-count">${allFeatures.length.toLocaleString()}</span> → ${maxRecords.toLocaleString()}…`
+      );
+
+      const params = new URLSearchParams({
+        where,
+        outFields: getFields(),
+        returnGeometry: 'true',
+        outSR: '4326',
+        f: qFmt,
+        resultOffset: offset,
+        resultRecordCount: count,
+        orderByFields: `${cc.fields.saleDate} DESC`,
+      });
+      const url = `${cc.endpoint}?${params}`;
+      const resp = await fetch(url);
+      if(!resp.ok) throw new Error(`HTTP ${resp.status}: ${resp.statusText}`);
+
+      const data = await resp.json();
+      if(data.error) throw new Error(data.error.message || JSON.stringify(data.error));
+
+      const features = data.features || [];
+      allFeatures = allFeatures.concat(features);
+
+      if(features.length < count) break;
+      offset += count;
+    }
   }
 
   setProgress(95, `Processing <span class="progress-count">${allFeatures.length.toLocaleString()}</span> records…`);
@@ -1518,7 +1545,8 @@ async function paginatedQuery(where, maxRecords){
 function processResults(features, dateFrom, dateTo){
   allSales = features
     .map(f => {
-      const p = f.properties;
+      // Support both geojson (.properties) and json (.attributes) formats
+      const p = f.properties || f.attributes || {};
       const geom = f.geometry;
       let lat, lng;
 
@@ -1649,11 +1677,15 @@ function processResults(features, dateFrom, dateTo){
   render();
   updateFreshnessTag(dateFrom, dateTo);
 
+  const cc2 = countyConf();
+  const badgeDetail = activeCounty === 'cuyahoga'
+    ? `<span style="color:var(--accent2)">✓ TAX_LUC IN (5000,1100) · RES_BLDG_COUNT=0</span><br>Updated monthly`
+    : `<span style="color:var(--accent2)">✓ DTE vacant codes · BLDVALUE=0 · TOTVALUE=LNDVALUE all parcels</span><br>Updated Mon–Fri nightly`;
   document.getElementById('source-badge').innerHTML =
-    `<span class="live">● LIVE DATA</span> — ${countyConf().name}<br>` +
+    `<button class="overlay-hide-btn" onclick="hideOverlay('source-badge')" title="Hide">×</button>` +
+    `<span class="live">● LIVE DATA</span> — ${cc2.name}<br>` +
     `${allSales.length.toLocaleString()} vacant land sales · ${isoToMDY(dateFrom)} → ${isoToMDY(dateTo)}<br>` +
-    `<span style="color:var(--accent2)">✓ DTE vacant codes · BLDVALUE=0 · TOTVALUE=LNDVALUE all parcels</span><br>` +
-    `Updated Mon–Fri nightly`;
+    badgeDetail;
 
   toast(`✓ Loaded ${allSales.length.toLocaleString()} real sales`);
   document.getElementById('reg-btn').disabled = false;
