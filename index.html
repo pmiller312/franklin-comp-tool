@@ -591,8 +591,15 @@ body.mobile-mode .sel-bar {
 <body>
 <div class="app">
 <header>
-  <div class="logo">Franklin County <span>Vacant Land</span> Sales</div>
+  <div class="logo" id="hdr-logo">Franklin County <span>Vacant Land</span> Sales</div>
   <div class="header-right">
+    <select id="county-select" onchange="switchCounty(this.value)"
+      style="background:var(--panel);color:var(--accent);border:1px solid var(--accent);
+             border-radius:3px;padding:3px 8px;font-family:'IBM Plex Mono',monospace;
+             font-size:.62rem;cursor:pointer;font-weight:700">
+      <option value="franklin" selected>Franklin</option>
+      <option value="cuyahoga">Cuyahoga</option>
+    </select>
     <div class="freshness" id="freshness-tag">No data loaded</div>
     <button class="reg-btn" id="hdr-gen-btn" onclick="generateSalesSheet()" disabled>⬇ Generate Sales Sheet</button>
     <button class="reg-btn" id="reg-btn" onclick="toggleRegression()" disabled>📈 Regression Analysis</button>
@@ -944,18 +951,124 @@ body.mobile-mode .sel-bar {
 
 <script>
 // ── CONSTANTS ─────────────────────────────────────────────────────────────────
-const GIS_BASE = "https://gis.franklincountyohio.gov/hosting/rest/services/ParcelFeatures/Parcel_Features/MapServer/0/query";
+// ── COUNTY CONFIGURATION ──────────────────────────────────────────────────────
+// Each county defines its endpoint, field mapping, and filter logic.
+// "vacant" filter: WHERE clause fragment that identifies vacant land parcels.
+// Fields map to internal standard names used throughout the app.
+const COUNTY_CONFIG = {
+  franklin: {
+    name:     'Franklin County',
+    endpoint: 'https://gis.franklincountyohio.gov/hosting/rest/services/ParcelFeatures/Parcel_Features/MapServer/0/query',
+    maxRec:   3000,
+    fields: {
+      parcel:   'PARCELID',
+      address:  'SITEADDRESS',
+      saleDate: 'SALEDATE',
+      salePrice:'SALEPRICE',
+      owner:    'OWNERNME1',
+      acres:    'STATEDAREA',
+      classcd:  'CLASSCD',
+      classdesc:'CLASSDSCRP',
+      district: 'CVTTXDSCRP',
+      school:   'SCHLDSCRP',
+      nbhd:     'NBHDCD',
+      lndVal:   'LNDVALUEBASE',
+      bldVal:   'BLDVALUEBASE',
+      totVal:   'TOTVALUEBASE',
+      water:    'WATERSERV',
+      sewer:    'SEWERSERV',
+      flood:    'FLOOD',
+      legal:    'PRPRTYDSCRP',
+      legal2:   'PRPRTYDSCRP2',
+      cnvy:     'CNVYNAME',
+      x:        'X_COORD',
+      y:        'Y_COORD',
+    },
+    // Which DTE class codes represent vacant land
+    vacantClasses: ['100','110','300','400','500','501','502','503','504','505'],
+    vacantFilter: (classVal) => {
+      if(classVal === 'ALL') return '';
+      if(classVal === 'VACANT') return " AND CLASSCD IN ('100','110','300','400','500','501','502','503','504','505')";
+      return ` AND CLASSCD = '${classVal}'`;
+    },
+    // Improvement filter — dual test: no building value AND total = land only
+    impvFilter: (impvMax) => {
+      const v = parseFloat(impvMax);
+      if(isNaN(v) || v < 0) return '';
+      if(v === 0) return ' AND (BLDVALUEBASE IS NULL OR BLDVALUEBASE = 0) AND (TOTVALUEBASE IS NULL OR LNDVALUEBASE IS NULL OR TOTVALUEBASE <= LNDVALUEBASE)';
+      return ` AND (BLDVALUEBASE IS NULL OR BLDVALUEBASE <= ${v})`;
+    },
+    dateField:  'SALEDATE',
+    priceField: 'SALEPRICE',
+    coordSR:    3735,   // Ohio State Plane South (feet) — convert to lat/lng
+    coordConvert: true,
+  },
+
+  cuyahoga: {
+    name:     'Cuyahoga County',
+    endpoint: 'https://services7.arcgis.com/GXM8JipKyc0m6HBi/arcgis/rest/services/CuyahogaSalesData/FeatureServer/0/query',
+    maxRec:   2000,
+    fields: {
+      parcel:   'PARCEL_ID',
+      address:  'PCL_ADDR_FULL',
+      saleDate: 'SALE_DATE',
+      salePrice:'SALE_AMOUNT',
+      owner:    null,               // not available in this dataset
+      acres:    'PAR_LOT_SZE',
+      classcd:  'TAX_LUC',
+      classdesc:'TAX_LUC_DESCRIPTION',
+      district: 'PAR_CITY',
+      school:   null,
+      nbhd:     'NEIGHBORHOOD_CODE',
+      lndVal:   null,
+      bldVal:   'RES_BLDG_COUNT',  // count not value — used differently
+      totVal:   'TAX_MARKET_TOTAL',
+      water:    'WATER',
+      sewer:    'SEWER',
+      flood:    null,               // not in this dataset
+      legal:    null,
+      legal2:   null,
+      cnvy:     'DEED_TYPE',
+      x:        null,               // geometry in shape, not separate coords
+      y:        null,
+    },
+    // Cuyahoga DTE class codes for vacant land (500-599 range = residential vacant)
+    vacantClasses: ['500','501','502','503','504','505','510','511','512','520','530','540','550','560','570','579'],
+    vacantFilter: (classVal) => {
+      if(classVal === 'ALL') return '';
+      if(classVal === 'VACANT') return ' AND TAX_LUC >= 500 AND TAX_LUC < 600';
+      return ` AND TAX_LUC = ${parseInt(classVal)||500}`;
+    },
+    // Cuyahoga improvement filter — use RES_BLDG_COUNT = 0 for vacant
+    impvFilter: (impvMax) => {
+      const v = parseFloat(impvMax);
+      if(isNaN(v) || v < 0) return '';
+      if(v === 0) return ' AND RES_BLDG_COUNT = 0';
+      return '';   // no fine-grained improvement value filter available
+    },
+    dateField:  'SALE_DATE',
+    priceField: 'SALE_AMOUNT',
+    coordSR:    4326,   // already WGS84 lat/lng in geometry
+    coordConvert: false,
+  },
+};
+
+// Active county — default Franklin, can be changed via county selector
+var activeCounty = 'franklin';
+
+// Shortcut to current config
+function countyConf(){ return COUNTY_CONFIG[activeCounty]; }
+
+// Legacy constant for any code still referencing GIS_BASE
+var GIS_BASE = COUNTY_CONFIG.franklin.endpoint;
 
 // Ohio State Plane South (EPSG:3735) → WGS84 conversion
 // Franklin County is in Ohio SP South zone
 // We'll request geometry in WGS84 (outSR=4326) directly from the API
-const FIELDS = [
-  "PARCELID","SITEADDRESS","ZIPCD","SALEDATE","SALEPRICE",
-  "STATEDAREA","CLASSCD","CLASSDSCRP","USECD","CVTTXDSCRP",
-  "SCHLDSCRP","OWNERNME1","PRPRTYDSCRP","PRPRTYDSCRP2",
-  "FLOOD","WATERSERV","SEWERSERV","TOTVALUEBASE","LNDVALUEBASE","BLDVALUEBASE",
-  "CNVYNAME","NBHDCD","X_COORD","Y_COORD"
-].join(",");
+function getFields(){
+  const f = countyConf().fields;
+  return [...new Set(Object.values(f).filter(Boolean))].join(",");
+}
 
 // ── MAP ───────────────────────────────────────────────────────────────────────
 const map = L.map('map',{zoomControl:false}).setView([39.98,-82.99],11);
@@ -1319,23 +1432,18 @@ async function runQuery(){
   const limit    = parseInt(document.getElementById('q-limit').value);
 
   // Build WHERE clause
-  let where = `SALEDATE >= DATE '${dateFrom}' AND SALEDATE <= DATE '${dateTo}' AND SALEPRICE >= ${priceMin}`;
-  if(acresMin > 0) where += ` AND STATEDAREA >= ${acresMin}`;
-  if(acresMax > 0) where += ` AND STATEDAREA <= ${acresMax}`;
+  const cc   = countyConf();
+  const flds = cc.fields;
+  let where = `${flds.saleDate} >= DATE '${dateFrom}' AND ${flds.saleDate} <= DATE '${dateTo}' AND ${flds.salePrice} >= ${priceMin}`;
+  if(acresMin > 0) where += ` AND ${flds.acres} >= ${acresMin}`;
+  if(acresMax > 0) where += ` AND ${flds.acres} <= ${acresMax}`;
 
-  // Vacant land code filter
-  if(classVal === 'VACANT'){
-    // All Ohio DTE vacant land codes: 100,110,300,400,500-505
-    where += ` AND CLASSCD IN ('100','110','300','400','500','501','502','503','504','505')`;
-  } else if(classVal && classVal !== 'ALL'){
-    where += ` AND CLASSCD = '${classVal}'`;
-  }
-  // Dual improvement test:
-  // 1. BLDVALUEBASE = 0 (no building value)
-  // 2. TOTVALUEBASE = LNDVALUEBASE (total assessed = land only, no improvement component)
-  // Both must be satisfied — catches cases where one field is null/mis-filed
-  where += ` AND (BLDVALUEBASE IS NULL OR BLDVALUEBASE = 0)`;
-  where += ` AND (TOTVALUEBASE IS NULL OR LNDVALUEBASE IS NULL OR TOTVALUEBASE <= LNDVALUEBASE)`;
+  // Vacant land class filter — county-specific
+  where += cc.vacantFilter(classVal);
+
+  // Improvement filter — county-specific
+  const impvMaxRaw = document.getElementById('q-impv-max')?.value || '-1';
+  where += cc.impvFilter(impvMaxRaw);
 
   try {
     const results = await paginatedQuery(where, limit);
@@ -1367,18 +1475,18 @@ async function paginatedQuery(where, maxRecords){
       `Fetching records <span class="progress-count">${allFeatures.length.toLocaleString()}</span> → ${maxRecords.toLocaleString()}…`
     );
 
+    const cc = countyConf();
     const params = new URLSearchParams({
       where,
-      outFields: FIELDS,
+      outFields: getFields(),
       returnGeometry: 'true',
-      outSR: '4326',         // request WGS84 coordinates directly
+      outSR: '4326',
       f: 'geojson',
       resultOffset: offset,
       resultRecordCount: count,
-      orderByFields: 'SALEDATE DESC',
+      orderByFields: `${cc.fields.saleDate} DESC`,
     });
-
-    const url = `${GIS_BASE}?${params}`;
+    const url = `${cc.endpoint}?${params}`;
     const resp = await fetch(url);
     if(!resp.ok) throw new Error(`HTTP ${resp.status}: ${resp.statusText}`);
 
@@ -1417,38 +1525,42 @@ function processResults(features, dateFrom, dateTo){
         return null;
       }
 
-      // Sanity check coords — Franklin County bounds
-      if(lat < 39.7 || lat > 40.3 || lng < -83.4 || lng > -82.6) return null;
+      // Sanity check coords — Ohio state bounds
+      if(lat < 38.3 || lat > 42.3 || lng < -85.0 || lng > -80.4) return null;
 
-      const bldVal  = p.BLDVALUEBASE || 0;
-      const totVal  = p.TOTVALUEBASE || 0;
-      const lndVal  = p.LNDVALUEBASE || 0;
-      // Improvement value = total assessed minus land value (should be 0 for vacant land)
-      const impvVal = totVal > 0 && lndVal > 0 ? Math.max(0, totVal - lndVal) : 0;
+      const f2 = countyConf().fields;
+      const bldRaw  = f2.bldVal ? (p[f2.bldVal] || 0) : 0;
+      const totVal  = f2.totVal ? (p[f2.totVal] || 0) : 0;
+      const lndVal  = f2.lndVal ? (p[f2.lndVal] || 0) : 0;
+      // For Cuyahoga bldVal is a count — treat >0 count as has improvement
+      const bldVal  = f2.bldVal === 'RES_BLDG_COUNT' ? bldRaw : bldRaw;
+      const impvVal = totVal > 0 && lndVal > 0 ? Math.max(0, totVal - lndVal) : (bldVal > 0 ? 1 : 0);
+      const addr    = f2.address ? (p[f2.address] || '') : '';
       return {
-        parcel:    p.PARCELID || '',
-        address:   p.SITEADDRESS || '',
+        parcel:    f2.parcel   ? (p[f2.parcel]   || '') : '',
+        address:   addr,
         zip:       p.ZIPCD || '',
-        sale_date: p.SALEDATE,  // epoch ms
-        sale_price: p.SALEPRICE || 0,
-        acres:     p.STATEDAREA || 0,
-        class_cd:  p.CLASSCD || '',
-        class_desc:p.CLASSDSCRP || '',
+        sale_date: f2.saleDate ? p[f2.saleDate]  : null,
+        sale_price: f2.salePrice ? (p[f2.salePrice] || 0) : 0,
+        acres:     f2.acres    ? (p[f2.acres]    || 0) : 0,
+        class_cd:  f2.classcd  ? String(p[f2.classcd]  || '') : '',
+        class_desc:f2.classdesc? (p[f2.classdesc]|| '') : '',
         use_cd:    p.USECD || '',
-        district:  p.CVTTXDSCRP || '',
-        school:    p.SCHLDSCRP || '',
-        owner:     p.OWNERNME1 || '',
-        legal:     [p.PRPRTYDSCRP, p.PRPRTYDSCRP2].filter(Boolean).join(' '),
-        cnvy_name: p.CNVYNAME || '',
-        nbhd:      p.NBHDCD || '',
-        has_address: !!(p.SITEADDRESS && p.SITEADDRESS.trim() && !/^0 /.test(p.SITEADDRESS.trim())),
-        flood:     p.FLOOD || 'N',
-        water:     p.WATERSERV || 'N',
-        sewer:     p.SEWERSERV || 'N',
+        district:  f2.district ? (p[f2.district] || '') : '',
+        school:    f2.school   ? (p[f2.school]   || '') : '',
+        owner:     f2.owner    ? (p[f2.owner]    || '') : '',
+        legal:     f2.legal    ? [p[f2.legal], f2.legal2 ? p[f2.legal2] : null].filter(Boolean).join(' ') : '',
+        cnvy_name: f2.cnvy     ? (p[f2.cnvy]     || '') : '',
+        nbhd:      f2.nbhd     ? (p[f2.nbhd]     || '') : '',
+        has_address: !!(addr && addr.trim() && !/^0 /.test(addr.trim())),
+        flood:     f2.flood    ? (p[f2.flood]    || 'N') : 'N',
+        water:     f2.water    ? (p[f2.water]    || 'N') : 'N',
+        sewer:     f2.sewer    ? (p[f2.sewer]    || 'N') : 'N',
         mkt_value: totVal,
         lnd_value: lndVal,
         bld_value: bldVal,
         impv_value: impvVal,
+        county:    activeCounty,
         lat, lng,
       };
     })
@@ -1528,7 +1640,7 @@ function processResults(features, dateFrom, dateTo){
   updateFreshnessTag(dateFrom, dateTo);
 
   document.getElementById('source-badge').innerHTML =
-    `<span class="live">● LIVE DATA</span> — Franklin County Auditor GIS<br>` +
+    `<span class="live">● LIVE DATA</span> — ${countyConf().name}<br>` +
     `${allSales.length.toLocaleString()} vacant land sales · ${isoToMDY(dateFrom)} → ${isoToMDY(dateTo)}<br>` +
     `<span style="color:var(--accent2)">✓ DTE vacant codes · BLDVALUE=0 · TOTVALUE=LNDVALUE all parcels</span><br>` +
     `Updated Mon–Fri nightly`;
@@ -3155,6 +3267,30 @@ function _renderRestoreBar(){
 }
 
 // ── END PANEL CONTROLS ────────────────────────────────────────────────────────
+
+// ── COUNTY SWITCHING ──────────────────────────────────────────────────────────
+function switchCounty(key){
+  if(!COUNTY_CONFIG[key]) return;
+  activeCounty = key;
+  GIS_BASE = COUNTY_CONFIG[key].endpoint;
+
+  // Update header logo
+  const logo = document.getElementById('hdr-logo');
+  if(logo) logo.innerHTML = `${COUNTY_CONFIG[key].name} <span>Vacant Land</span> Sales`;
+
+  // Update map center/zoom for the county
+  const centers = {
+    franklin: [39.98, -82.99],
+    cuyahoga: [41.48, -81.69],
+  };
+  const zooms = { franklin: 11, cuyahoga: 11 };
+  if(centers[key]) map.setView(centers[key], zooms[key] || 11);
+
+  // Clear existing data
+  clearData();
+  toast(`Switched to ${COUNTY_CONFIG[key].name}`);
+}
+
 // ── INIT ──────────────────────────────────────────────────────────────────────
 // Set default "to" date to today
 const _t = new Date();
