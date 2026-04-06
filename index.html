@@ -1462,7 +1462,13 @@ async function runQuery(){
     const results = await paginatedQuery(where, limit);
     processResults(results, dateFrom, dateTo);
   } catch(e){
-    toast('Query failed: '+e.message, true);
+    let msg = e.message || String(e);
+    if(msg.includes('400') || msg.toLowerCase().includes('invalid query') || msg.toLowerCase().includes('unable to perform')){
+      msg = `${countyConf().name} service temporarily unavailable — please try again in a moment.`;
+    } else if(msg.includes('Failed to fetch') || msg.includes('NetworkError')){
+      msg = 'Network error — check your connection and try again.';
+    }
+    toast('⚠ ' + msg, true);
     console.error(e);
   } finally {
     isFetching = false;
@@ -1482,24 +1488,48 @@ async function paginatedQuery(where, maxRecords){
   const qFmt = cc.queryFormat || 'geojson';
 
   if(cc.singlePage){
-    // ArcGIS Online FeatureServers (e.g. Cuyahoga) reject resultOffset with 400.
-    // Fetch one page up to maxRecordCount.
-    setProgress(30, `Fetching records…`);
-    const params = new URLSearchParams({
-      where,
-      outFields: getFields(),
-      returnGeometry: 'true',
-      outSR: '4326',
-      f: qFmt,
-      resultRecordCount: Math.min(maxRecords, cc.maxRec || 2000),
-      orderByFields: `${cc.fields.saleDate} DESC`,
-    });
-    const url = `${cc.endpoint}?${params}`;
-    const resp = await fetch(url);
-    if(!resp.ok) throw new Error(`HTTP ${resp.status}: ${resp.statusText}`);
-    const data = await resp.json();
-    if(data.error) throw new Error(data.error.message || JSON.stringify(data.error));
-    allFeatures = data.features || [];
+    // ArcGIS Online FeatureServers (e.g. Cuyahoga) reject resultOffset — single page only.
+    // Retry up to 3 times with backoff to handle intermittent throttling.
+    const MAX_RETRIES = 3;
+    let lastErr = null;
+    for(let attempt = 0; attempt < MAX_RETRIES; attempt++){
+      if(attempt > 0){
+        setProgress(10 + attempt*15, `Retrying… (attempt ${attempt+1}/${MAX_RETRIES})`);
+        await new Promise(r => setTimeout(r, 1500 * attempt)); // 0s, 1.5s, 3s
+      } else {
+        setProgress(30, `Fetching records…`);
+      }
+      // Try geojson first, fall back to json on second attempt
+      const fmt = attempt === 1 ? 'json' : 'geojson';
+      const params = new URLSearchParams({
+        where,
+        outFields: getFields(),
+        returnGeometry: 'true',
+        outSR: '4326',
+        f: fmt,
+        resultRecordCount: Math.min(maxRecords, cc.maxRec || 2000),
+        orderByFields: `${cc.fields.saleDate} DESC`,
+      });
+      const url = `${cc.endpoint}?${params}`;
+      try {
+        const resp = await fetch(url);
+        if(!resp.ok){ lastErr = new Error(`HTTP ${resp.status}`); continue; }
+        const data = await resp.json();
+        if(data.error){
+          // Code 400 from ArcGIS Online is often transient throttling — retry
+          lastErr = new Error(data.error.message || JSON.stringify(data.error));
+          if(data.error.code === 400 && attempt < MAX_RETRIES - 1) continue;
+          throw lastErr;
+        }
+        allFeatures = data.features || [];
+        lastErr = null;
+        break; // success
+      } catch(e){
+        if(e === lastErr) throw e; // re-throw non-recoverable errors immediately
+        lastErr = e;
+      }
+    }
+    if(lastErr) throw lastErr;
 
   } else {
     // Standard offset pagination (Franklin County MapServer)
