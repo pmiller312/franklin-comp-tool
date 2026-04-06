@@ -999,6 +999,7 @@ const COUNTY_CONFIG = {
       return ` AND (BLDVALUEBASE IS NULL OR BLDVALUEBASE <= ${v})`;
     },
     dateField:  'SALEDATE',
+    dateFormat: 'sql',      // DATE 'yyyy-mm-dd'
     priceField: 'SALEPRICE',
     coordSR:    3735,   // Ohio State Plane South (feet) — convert to lat/lng
     coordConvert: true,
@@ -1032,21 +1033,20 @@ const COUNTY_CONFIG = {
       x:        null,               // geometry in shape, not separate coords
       y:        null,
     },
-    // Cuyahoga DTE class codes for vacant land (500-599 range = residential vacant)
-    vacantClasses: ['500','501','502','503','504','505','510','511','512','520','530','540','550','560','570','579'],
+    // Cuyahoga LUC codes: 5000 = RES VACANT LAND, 1100 = VACANT AG LAND-CAUV
+    // These are 4-digit codes unlike Franklin's 3-digit DTE codes
+    vacantClasses: ['5000','1100'],
     vacantFilter: (classVal) => {
       if(classVal === 'ALL') return '';
-      if(classVal === 'VACANT') return ' AND TAX_LUC >= 500 AND TAX_LUC < 600';
-      return ` AND TAX_LUC = ${parseInt(classVal)||500}`;
+      if(classVal === 'VACANT') return " AND TAX_LUC IN (5000,1100) AND RES_BLDG_COUNT = 0";
+      // Specific class selection — map display value to actual LUC
+      const luc = parseInt(classVal);
+      return ` AND TAX_LUC = ${isNaN(luc) ? 5000 : luc} AND RES_BLDG_COUNT = 0`;
     },
-    // Cuyahoga improvement filter — use RES_BLDG_COUNT = 0 for vacant
-    impvFilter: (impvMax) => {
-      const v = parseFloat(impvMax);
-      if(isNaN(v) || v < 0) return '';
-      if(v === 0) return ' AND RES_BLDG_COUNT = 0';
-      return '';   // no fine-grained improvement value filter available
-    },
+    // Cuyahoga improvement filter — RES_BLDG_COUNT already applied in vacantFilter
+    impvFilter: (impvMax) => '',
     dateField:  'SALE_DATE',
+    dateFormat: 'timestamp', // Unix ms epoch
     priceField: 'SALE_AMOUNT',
     coordSR:    4326,   // already WGS84 lat/lng in geometry
     coordConvert: false,
@@ -1434,7 +1434,17 @@ async function runQuery(){
   // Build WHERE clause
   const cc   = countyConf();
   const flds = cc.fields;
-  let where = `${flds.saleDate} >= DATE '${dateFrom}' AND ${flds.saleDate} <= DATE '${dateTo}' AND ${flds.salePrice} >= ${priceMin}`;
+  // Date filter syntax varies by county:
+  // Franklin (MapServer) uses SQL DATE 'yyyy-mm-dd' syntax
+  // Cuyahoga (FeatureServer/ArcGIS Online) uses Unix timestamp ms
+  let where;
+  if(cc.dateFormat === 'timestamp'){
+    const tsFrom = new Date(dateFrom).getTime();
+    const tsTo   = new Date(dateTo + 'T23:59:59').getTime();
+    where = `${flds.saleDate} >= ${tsFrom} AND ${flds.saleDate} <= ${tsTo} AND ${flds.salePrice} >= ${priceMin}`;
+  } else {
+    where = `${flds.saleDate} >= DATE '${dateFrom}' AND ${flds.saleDate} <= DATE '${dateTo}' AND ${flds.salePrice} >= ${priceMin}`;
+  }
   if(acresMin > 0) where += ` AND ${flds.acres} >= ${acresMin}`;
   if(acresMax > 0) where += ` AND ${flds.acres} <= ${acresMax}`;
 
