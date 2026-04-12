@@ -1348,16 +1348,23 @@ const AUDITOR_URLS = {
   medina:    'https://auditor.medinacounty.gov/Search',
 };
 
-// Per-county recorder search base URLs (publicsearch.us county subdomains)
+// Per-county recorder search base URLs
+// Franklin/Cuyahoga use publicsearch.us with name+date params
+// Delaware uses dts-central-oh.com (PaxWorld platform) — no deep link params
+// Medina uses recorder.co.medina.oh.us — no deep link params
 const RECORDER_URLS = {
   franklin:  'https://franklin.oh.publicsearch.us/results?department=RP',
   cuyahoga:  'https://cuyahoga.oh.publicsearch.us/results?department=RP',
-  delaware:  'https://delaware.oh.publicsearch.us/results?department=RP',
-  medina:    'https://medina.oh.publicsearch.us/results?department=RP',
+  delaware:  'https://delaware.dts-central-oh.com/PaxWorld/',
+  medina:    'https://recorder.co.medina.oh.us/document-search/',
 };
 
 function recorderUrl(ownerName, saleTs){
   const recBase = RECORDER_URLS[activeCounty] || RECORDER_URLS.franklin;
+  // Delaware and Medina use different platforms — no URL param support, return base URL
+  if(activeCounty === 'delaware' || activeCounty === 'medina'){
+    return recBase;
+  }
   const raw = (ownerName||'').trim();
   if(!raw) return recBase.split('/results')[0] + '/';
 
