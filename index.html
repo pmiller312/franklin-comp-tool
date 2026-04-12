@@ -599,6 +599,7 @@ body.mobile-mode .sel-bar {
              font-size:.62rem;cursor:pointer;font-weight:700">
       <option value="franklin" selected>Franklin</option>
       <option value="cuyahoga">Cuyahoga</option>
+      <option value="delaware">Delaware</option>
     </select>
     <div class="freshness" id="freshness-tag">No data loaded</div>
     <button class="reg-btn" id="hdr-gen-btn" onclick="generateSalesSheet()" disabled>⬇ Generate Sales Sheet</button>
@@ -1053,6 +1054,54 @@ const COUNTY_CONFIG = {
     coordSR:    4326,   // already WGS84 lat/lng in geometry
     coordConvert: false,
     singlePage: true,   // ArcGIS Online FeatureServer rejects resultOffset — fetch one page only
+  },
+
+  delaware: {
+    name:     'Delaware County',
+    endpoint: 'https://maps.delco-gis.org/arcgiswebadaptor/rest/services/DelawareCountyData/MapServer/0/query',
+    maxRec:   1000,
+    fields: {
+      parcel:   'PARCEL_NO',
+      address:  'ADDR1',
+      saleDate: 'SALE_DATE',
+      salePrice:'SALE_AMNT',
+      owner:    'OWNER1',
+      acres:    'ACRES',
+      classcd:  'CLASS',
+      classdesc: null,
+      district: 'TWP_NAME',
+      school:   'SCHOOL',
+      nbhd:     'NGHBRHDCD',
+      lndVal:   'MARKET_LAN',
+      bldVal:   'MARKET_IMP',
+      totVal:   'MARKET_TOT',
+      water:    null,
+      sewer:    null,
+      flood:    null,
+      legal:    'LEGAL',
+      legal2:   null,
+      cnvy:     null,
+      x:        null,
+      y:        null,
+    },
+    vacantClasses: ['100','101','102','120','300','400','500','501','502','503','504','505'],
+    vacantFilter: (classVal) => {
+      if(classVal === 'ALL') return '';
+      if(classVal === 'VACANT') return " AND CLASS IN ('100','101','102','120','300','400','500','501','502','503','504','505')";
+      return ` AND CLASS = '${classVal}'`;
+    },
+    impvFilter: (impvMax) => {
+      const v = parseFloat(impvMax);
+      if(isNaN(v) || v < 0) return '';
+      if(v === 0) return ' AND (MARKET_IMP IS NULL OR MARKET_IMP = 0)';
+      return ` AND (MARKET_IMP IS NULL OR MARKET_IMP <= ${v})`;
+    },
+    dateField:  'SALE_DATE',
+    dateFormat: 'sql',
+    priceField: 'SALE_AMNT',
+    coordSR:    4326,
+    coordConvert: false,
+    singlePage: false,
   },
 };
 
@@ -3354,8 +3403,9 @@ function switchCounty(key){
   const centers = {
     franklin: [39.98, -82.99],
     cuyahoga: [41.48, -81.69],
+    delaware: [40.28, -83.00],
   };
-  const zooms = { franklin: 11, cuyahoga: 11 };
+  const zooms = { franklin: 11, cuyahoga: 11, delaware: 11 };
   if(centers[key]) map.setView(centers[key], zooms[key] || 11);
 
   // Clear existing data
