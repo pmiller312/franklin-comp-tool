@@ -600,6 +600,7 @@ body.mobile-mode .sel-bar {
       <option value="franklin" selected>Franklin</option>
       <option value="cuyahoga">Cuyahoga</option>
       <option value="delaware">Delaware</option>
+      <option value="medina">Medina</option>
     </select>
     <div class="freshness" id="freshness-tag">No data loaded</div>
     <button class="reg-btn" id="hdr-gen-btn" onclick="generateSalesSheet()" disabled>⬇ Generate Sales Sheet</button>
@@ -1102,6 +1103,55 @@ const COUNTY_CONFIG = {
     coordSR:    4326,
     coordConvert: false,
     singlePage: false,
+  },
+
+  medina: {
+    name:     'Medina County',
+    endpoint: 'https://services5.arcgis.com/m37BbrYBtVXq1nb8/arcgis/rest/services/Medina_Parcel_Viewer/FeatureServer/0/query',
+    maxRec:   2000,
+    fields: {
+      parcel:    'ParcelPIN',
+      address:   'Address',
+      saleDate:  'SaleDate',
+      salePrice: 'SaleAmount',
+      owner:     'Owner',
+      acres:     'Acres',
+      classcd:   'ClassCode',
+      classdesc: 'Classification',
+      district:  'City',
+      school:    null,
+      nbhd:      null,
+      lndVal:    'Market_Land_Value',
+      bldVal:    'Market_Improve_Value',
+      totVal:    'Total_Market_Value',
+      water:     null,
+      sewer:     null,
+      flood:     null,
+      legal:     null,
+      legal2:    null,
+      cnvy:      null,
+      x:         null,
+      y:         null,
+    },
+    // Ohio DTE codes confirmed in Medina dataset (Market_Improve_Value=0 parcels)
+    vacantClasses: ['101','110','111','112','122','124','199','300','399','400','500','501','502','503','504','505','510','511','512','514'],
+    vacantFilter: (classVal) => {
+      if(classVal === 'ALL') return '';
+      if(classVal === 'VACANT') return " AND ClassCode IN ('101','110','111','112','122','124','199','300','399','400','500','501','502','503','504','505','510','511','512','514')";
+      return ` AND ClassCode = '${classVal}'`;
+    },
+    impvFilter: (impvMax) => {
+      const v = parseFloat(impvMax);
+      if(isNaN(v) || v < 0) return '';
+      if(v === 0) return ' AND (Market_Improve_Value IS NULL OR Market_Improve_Value = 0)';
+      return ` AND (Market_Improve_Value IS NULL OR Market_Improve_Value <= ${v})`;
+    },
+    dateField:    'SaleDate',
+    dateFormat:   'sql',
+    priceField:   'SaleAmount',
+    coordSR:      4326,
+    coordConvert: false,
+    singlePage:   false,  // FeatureServer supports offset pagination fine
   },
 };
 
@@ -3404,8 +3454,9 @@ function switchCounty(key){
     franklin: [39.98, -82.99],
     cuyahoga: [41.48, -81.69],
     delaware: [40.28, -83.00],
+    medina:   [41.14, -81.86],
   };
-  const zooms = { franklin: 11, cuyahoga: 11, delaware: 11 };
+  const zooms = { franklin: 11, cuyahoga: 11, delaware: 11, medina: 11 };
   if(centers[key]) map.setView(centers[key], zooms[key] || 11);
 
   // Clear existing data
