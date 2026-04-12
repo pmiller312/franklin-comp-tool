@@ -1052,6 +1052,7 @@ const COUNTY_CONFIG = {
     dateFormat: 'sql',       // FeatureServer stores ms internally but query uses DATE 'yyyy-mm-dd'
     queryFormat: 'json',      // FeatureServer — use json, read .attributes
     priceField: 'SALE_AMOUNT',
+    acresFactor: 1/43560,  // PAR_LOT_SZE is in square feet — convert to acres
     coordSR:    4326,   // already WGS84 lat/lng in geometry
     coordConvert: false,
     singlePage: true,   // ArcGIS Online FeatureServer rejects resultOffset — fetch one page only
@@ -1314,12 +1315,26 @@ async function queryFloodZone(lat, lng){
 }
 
 // Franklin County Recorder deed search URL
+// Per-county auditor property search URLs
+const AUDITOR_URLS = {
+  franklin:  'https://property.franklincountyauditor.com/_web/search/commonsearch.aspx?mode=parid',
+  cuyahoga:  'https://fiscalapp.cuyahogacounty.gov/#!/search',
+  delaware:  'https://auditor.co.delaware.oh.us/query/',
+  medina:    'https://auditor.medinacounty.gov/Search',
+};
+
+// Per-county recorder search base URLs (publicsearch.us county subdomains)
+const RECORDER_URLS = {
+  franklin:  'https://franklin.oh.publicsearch.us/results?department=RP',
+  cuyahoga:  'https://cuyahoga.oh.publicsearch.us/results?department=RP',
+  delaware:  'https://delaware.oh.publicsearch.us/results?department=RP',
+  medina:    'https://medina.oh.publicsearch.us/results?department=RP',
+};
+
 function recorderUrl(ownerName, saleTs){
-  // GIS OWNERNME1 = current owner = the GRANTEE of the most recent deed
-  // Search both grantor + grantee so we find the deed regardless of name order
-  // Use full name for search — more specific than last-name-only
+  const recBase = RECORDER_URLS[activeCounty] || RECORDER_URLS.franklin;
   const raw = (ownerName||'').trim();
-  if(!raw) return 'https://franklin.oh.publicsearch.us/';
+  if(!raw) return recBase.split('/results')[0] + '/';
 
   // Build search term: full name for businesses, full name for individuals too
   // (searching both grantor+grantee means full name is safe and more specific)
@@ -1355,7 +1370,7 @@ function recorderUrl(ownerName, saleTs){
     }
   }
 
-  return 'https://franklin.oh.publicsearch.us/results?department=RP'
+  return recBase
     + '&parties=' + encodeURIComponent(parties)
     + dateRange
     + '&searchType=advancedSearch';
@@ -1709,7 +1724,7 @@ function processResults(features, dateFrom, dateTo){
         zip:       p.ZIPCD || '',
         sale_date: f2.saleDate ? p[f2.saleDate]  : null,
         sale_price: f2.salePrice ? (p[f2.salePrice] || 0) : 0,
-        acres:     f2.acres    ? (p[f2.acres]    || 0) : 0,
+        acres:     f2.acres    ? ((p[f2.acres] || 0) * (cc.acresFactor || 1)) : 0,
         class_cd:  f2.classcd  ? String(p[f2.classcd]  || '') : '',
         class_desc:f2.classdesc? (p[f2.classdesc]|| '') : '',
         use_cd:    p.USECD || '',
@@ -1807,14 +1822,10 @@ function processResults(features, dateFrom, dateTo){
   updateFreshnessTag(dateFrom, dateTo);
 
   const cc2 = countyConf();
-  const badgeDetail = activeCounty === 'cuyahoga'
-    ? `<span style="color:var(--accent2)">✓ TAX_LUC IN (5000,1100) · RES_BLDG_COUNT=0</span><br>Updated monthly`
-    : `<span style="color:var(--accent2)">✓ DTE vacant codes · BLDVALUE=0 · TOTVALUE=LNDVALUE all parcels</span><br>Updated Mon–Fri nightly`;
   document.getElementById('source-badge').innerHTML =
     `<button class="overlay-hide-btn" onclick="hideOverlay('source-badge')" title="Hide">×</button>` +
-    `<span class="live">● LIVE DATA</span> — ${cc2.name}<br>` +
-    `${allSales.length.toLocaleString()} vacant land sales · ${isoToMDY(dateFrom)} → ${isoToMDY(dateTo)}<br>` +
-    badgeDetail;
+    `<span class="live">● LIVE DATA</span> — ${cc2.name} Auditor<br>` +
+    `${allSales.length.toLocaleString()} vacant land sales · ${isoToMDY(dateFrom)} → ${isoToMDY(dateTo)}`;
 
   toast(`✓ Loaded ${allSales.length.toLocaleString()} real sales`);
   document.getElementById('reg-btn').disabled = false;
@@ -1873,32 +1884,23 @@ function buildClassFilters(){
 
 // ── MOBILE API PARCEL DETAIL ─────────────────────────────────────────────────
 // Fetch full parcel detail from the GIS FeatureServer (CORS-friendly, same source as bulk query)
-const GIS_DETAIL_FIELDS = [
-  "PARCELID","SITEADDRESS","ZIPCD","SALEDATE","SALEPRICE","STATEDAREA","ACRES",
-  "CLASSCD","CLASSDSCRP","USECD","CVTTXCD","CVTTXDSCRP","SCHLTXCD","SCHLDSCRP",
-  "NBHDCD","OWNERNME1","OWNERNME2","MAILNME1","MAILNME2","PSTLADDRES","PSTLCITYSTZIP",
-  "PRPRTYDSCRP","PRPRTYDSCRP2","PRPRTYDSCRP3","CNVYNAME",
-  "FLOOD","WATERSERV","SEWERSERV",
-  "TOTVALUEBASE","LNDVALUEBASE","BLDVALUEBASE",
-  "RESYRBLT","RESFLRAREA","BATHS","BEDRMS","ROOMS",
-  "PCLASS","PROPTYP","CAUV","OWNEROCCUPIED","HOMSTD","RENTAL",
-  "TOTCNTTXOD","CNTTXBLVAL"
-].join(",");
-
 async function fetchParcelDetail(parcelId){
+  // County-aware: query the active county's endpoint with its own field names
   try {
-    // Query GIS by exact PARCELID
+    const cc = countyConf();
+    const pf = cc.fields.parcel;
     const params = new URLSearchParams({
-      where: `PARCELID = '${parcelId}'`,
-      outFields: GIS_DETAIL_FIELDS,
+      where: `${pf} = '${parcelId}'`,
+      outFields: getFields(),
       returnGeometry: 'false',
       f: 'json',
     });
-    const r = await fetch(`${GIS_BASE}?${params}`);
+    const r = await fetch(`${cc.endpoint}?${params}`);
     if(!r.ok) return null;
     const data = await r.json();
     if(data.error || !data.features?.length) return null;
-    return data.features[0].attributes;
+    // Support both json (.attributes) and geojson (.properties) responses
+    return data.features[0].attributes || data.features[0].properties || null;
   } catch(e){ return null; }
 }
 
@@ -1927,28 +1929,32 @@ function buildQuickPopup(s, color){
 }
 
 function buildFullPopup(s, color, d, flood){
-  // d = flat GIS attributes object from FeatureServer query
-  // flood = FEMA NFHL zone data (may be null)
-  const acres   = d.STATEDAREA || s.acres || 0;
+  // d = flat GIS attributes object from fetchParcelDetail (county-aware)
+  // Use county field mapping so all counties display correctly
+  const cf = countyConf().fields;
+  const acresFactor = countyConf().acresFactor || 1;
+  const acresRaw = cf.acres ? d[cf.acres] : null;
+  const acres   = (acresRaw != null ? acresRaw * acresFactor : null) || s.acres || 0;
   const sqft    = acres>0 ? Math.round(acres*43560).toLocaleString()+' SF' : '—';
   const ppa     = acres>0 ? fmtFull(s.sale_price/acres)+'/ac' : '—';
   const ppsf    = acres>0 ? '$'+(s.sale_price/(acres*43560)).toFixed(2)+'/SF' : '—';
-  const owner   = [d.OWNERNME1, d.OWNERNME2].filter(Boolean).join(' / ') || s.owner || '—';
-  const mktVal  = d.TOTVALUEBASE > 0 ? fmtFull(d.TOTVALUEBASE) : '—';
-  const lndVal  = d.LNDVALUEBASE > 0 ? fmtFull(d.LNDVALUEBASE) : '—';
-  const taxAmt  = d.TOTCNTTXOD  > 0 ? fmtFull(d.TOTCNTTXOD)  : '—';
-  const legal   = [d.PRPRTYDSCRP, d.PRPRTYDSCRP2, d.PRPRTYDSCRP3].filter(Boolean).join(' ');
-  const utils   = [
-    d.WATERSERV==='Y'?'Water':'', d.SEWERSERV==='Y'?'Sewer':''
-  ].filter(Boolean).join(', ') || '—';
-  const floodOk = d.FLOOD !== 'Y';
-  const mailAddr= [d.PSTLADDRES, d.PSTLCITYSTZIP].filter(Boolean).join(', ');
-  const useDesc = d.CLASSDSCRP || s.class_desc || s.class_cd || '—';
-  const school  = (d.SCHLDSCRP || s.school || '—').slice(0,24);
-  const district= (d.CVTTXDSCRP || s.district || '—').slice(0,24);
-  const nbhd    = d.NBHDCD || '—';
-  const cauv    = d.CAUV === 'Y' ? '✓ Yes' : 'No';
-  const rental  = d.RENTAL === 'Y' ? '✓ Yes' : 'No';
+  const owner   = (cf.owner ? (d[cf.owner] || '') : '') || s.owner || '—';
+  const mktVal  = (cf.totVal  && d[cf.totVal]  > 0) ? fmtFull(d[cf.totVal])  : '—';
+  const lndVal  = (cf.lndVal  && d[cf.lndVal]  > 0) ? fmtFull(d[cf.lndVal])  : '—';
+  const taxAmt  = '—';   // tax amount not available in all county APIs
+  const legal   = cf.legal ? [d[cf.legal], cf.legal2 ? d[cf.legal2] : null].filter(Boolean).join(' ') : '';
+  const waterV  = cf.water ? (d[cf.water] || 'N') : (s.water || 'N');
+  const sewerV  = cf.sewer ? (d[cf.sewer] || 'N') : (s.sewer || 'N');
+  const utils   = [waterV==='Y'?'Water':'', sewerV==='Y'?'Sewer':''].filter(Boolean).join(', ') || '—';
+  const floodV  = cf.flood ? (d[cf.flood] || 'N') : (s.flood || 'N');
+  const floodOk = floodV !== 'Y';
+  const mailAddr= '';   // mail address varies by county API
+  const useDesc = (cf.classdesc ? d[cf.classdesc] : null) || s.class_desc || s.class_cd || '—';
+  const school  = ((cf.school   ? d[cf.school]   : null) || s.school  || '—').slice(0,24);
+  const district= ((cf.district ? d[cf.district] : null) || s.district || '—').slice(0,24);
+  const nbhd    = (cf.nbhd ? d[cf.nbhd] : null) || '—';
+  const cauv    = '—';
+  const rental  = '—';
 
   function row(label, val){ return `<div class="pu-field"><label>${label}</label><span style="font-size:.7rem">${val}</span></div>`; }
   function section(title){ return `<div style="font-family:'IBM Plex Mono',monospace;font-size:.56rem;color:var(--muted);text-transform:uppercase;letter-spacing:.1em;margin:7px 0 4px;padding-top:6px;border-top:1px solid #1f2736">${title}</div>`; }
@@ -1996,8 +2002,8 @@ function buildFullPopup(s, color, d, flood){
         ${flood && flood.bfe ? row('Base Flood Elevation', flood.bfe) : ''}
         ${flood && flood.sfha ? row('Special Flood Hazard Area', '<span style="color:#e84a4a">⚠ Yes — insurance may be required</span>') : ''}
         ${row('Utilities', utils)}
-        ${row('Water Svc', d.WATERSERV==='Y'?'✓ Yes':'No')}
-        ${row('Sewer Svc', d.SEWERSERV==='Y'?'✓ Yes':'No')}
+        ${row('Water Svc', waterV==='Y'?'✓ Yes':'No')}
+        ${row('Sewer Svc', sewerV==='Y'?'✓ Yes':'No')}
       </div>
 
       ${legal ? `
@@ -2717,12 +2723,9 @@ function sgToggleComp(parcelId, checkbox){
 
 // ── AUDITOR SITE HELPERS ──────────────────────────────────────────────────────
 function auditorOpen(parcel){
-  // Copy PIN to clipboard so user can paste immediately on the search page
   navigator.clipboard.writeText(parcel).catch(()=>{});
-  window.open(
-    'https://property.franklincountyauditor.com/_web/search/commonsearch.aspx?mode=parid',
-    '_blank'
-  );
+  const url = AUDITOR_URLS[activeCounty] || AUDITOR_URLS.franklin;
+  window.open(url, '_blank');
   toast(`Parcel ${parcel} copied — paste into the search box`);
 }
 
@@ -2825,25 +2828,35 @@ async function generateSalesSheet(){
   const comps = selectedComps.map((s, i) => {
     const d = detailsArr[i] || {};
     const fz = floodsArr[i];
-    const acres     = d.STATEDAREA || s.acres || 0;
+    // Use county field mapping so non-Franklin counties populate correctly
+    const cf    = countyConf().fields;
+    const acres = (cf.acres ? d[cf.acres] : null) || s.acres || 0;
     const sqft      = acres > 0 ? (acres * 43560).toFixed(0) : '';
     const ppa_gross = acres > 0 ? (s.sale_price / acres).toFixed(2) : '';
     const ppsf_gross= acres > 0 ? (s.sale_price / (acres*43560)).toFixed(4) : '';
+    const waterVal = cf.water ? (d[cf.water] || 'N') : 'N';
+    const sewerVal = cf.sewer ? (d[cf.sewer] || 'N') : 'N';
     const utils = [
-      d.WATERSERV==='Y'?'Water':'', d.SEWERSERV==='Y'?'Sewer':''
+      waterVal==='Y'?'Water':'', sewerVal==='Y'?'Sewer':''
     ].filter(Boolean).join(', ') || 'Unknown';
-    const flood = d.FLOOD === 'Y' ? 'Yes' : d.FLOOD === 'N' ? 'No' : '';
+    const floodVal = cf.flood ? (d[cf.flood] || 'N') : (s.flood || 'N');
+    const ownerVal  = cf.owner  ? (d[cf.owner]  || s.owner || '') : (s.owner || '');
+    const addrVal   = cf.address ? (d[cf.address] || s.address || '') : (s.address || '');
+    const distVal   = cf.district ? (d[cf.district] || s.district || '') : (s.district || '');
+    const schoolVal = cf.school   ? (d[cf.school]   || s.school  || '') : (s.school  || '');
+    const legalVal  = cf.legal    ? [d[cf.legal], cf.legal2 ? d[cf.legal2] : null].filter(Boolean).join(' ') : '';
+    const classdVal = cf.classdesc ? (d[cf.classdesc] || s.class_desc || '') : (s.class_desc || s.class_cd || '');
 
     return {
-      address:    d.SITEADDRESS || s.address || '',
-      county:     'Franklin',
-      township:   d.CVTTXDSCRP || s.district || '',
+      address:    addrVal,
+      county:     countyConf().name,
+      township:   distVal,
       city:       '',
       state:      'Ohio',
-      school:     d.SCHLDSCRP || s.school || '',
-      legal:      [d.PRPRTYDSCRP, d.PRPRTYDSCRP2, d.PRPRTYDSCRP3].filter(Boolean).join(' '),
-      grantor:    d.OWNERNME1 || s.owner || '',
-      grantee:    d.OWNERNME2 || '',
+      school:     schoolVal,
+      legal:      legalVal,
+      grantor:    ownerVal,
+      grantee:    '',   // GIS only has current owner; grantee = owner on most recent deed
       sale_date:  fmtDate(s.sale_date),
       financing:  '',
       sale_price: fmtFull(s.sale_price),
@@ -2860,16 +2873,16 @@ async function generateSalesSheet(){
       instrument: '',
       instr_type: '',
       highest_best: '',
-      present_use: d.CLASSDSCRP || s.class_desc || '',
+      present_use: classdVal,
       improvements: s.impv_value > 0 ? fmtFull(s.impv_value) : 'None',
       size_gross: acres > 0 ? acres + ' ac / ' + Number(sqft).toLocaleString() + ' SF' : '',
       size_net:   '',
       dimensions: '',
       shape:      '',
       utilities:  utils,
-      zoning:     d.USECD || s.use_cd || '',
+      zoning:     s.use_cd || '',
       topography: '',
-      flood:      fz ? floodZoneLabel(fz.zone) + (fz.sfha ? ' (SFHA)' : '') : (d.FLOOD === 'Y' ? 'Yes (Auditor)' : 'No (Auditor)'),
+      flood:      fz ? floodZoneLabel(fz.zone) + (fz.sfha ? ' (SFHA)' : '') : (floodVal === 'Y' ? 'Yes (Auditor)' : 'No (Auditor)'),
       flood_zone: fz?.bfe ? 'BFE: ' + fz.bfe : '',
       ppa_gross:  ppa_gross ? '$' + Number(ppa_gross).toLocaleString(undefined,{minimumFractionDigits:2}) : '',
       ppa_net:    '',
