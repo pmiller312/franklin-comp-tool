@@ -1747,13 +1747,13 @@ function processResults(features, dateFrom, dateTo){
       return {
         parcel:    f2.parcel   ? (p[f2.parcel]   || '') : '',
         address:   addr,
-        zip:       p.ZIPCD || '',
+        zip:       p.ZIPCD || p.ZIP || '',
         sale_date: f2.saleDate ? p[f2.saleDate]  : null,
         sale_price: f2.salePrice ? (p[f2.salePrice] || 0) : 0,
         acres:     f2.acres    ? ((p[f2.acres] || 0) * (cc.acresFactor || 1)) : 0,
         class_cd:  f2.classcd  ? String(p[f2.classcd]  || '') : '',
         class_desc:f2.classdesc? (p[f2.classdesc]|| '') : '',
-        use_cd:    p.USECD || '',
+        use_cd:    (p.USECD || p.use_cd || ''),
         district:  f2.district ? (p[f2.district] || '') : '',
         school:    f2.school   ? (p[f2.school]   || '') : '',
         owner:     f2.owner    ? (p[f2.owner]    || '') : '',
@@ -1948,8 +1948,8 @@ function buildQuickPopup(s, color){
         <span style="color:var(--muted);font-size:.6rem">⏳ Loading full detail…</span>
       </div>
       <div style="display:flex;gap:6px;margin-top:4px">
-        <button onclick="auditorOpen('${s.parcel}')" style="flex:1;padding:5px 4px;background:var(--accent);color:#0c0e12;border:none;border-radius:2px;cursor:pointer;font-family:'IBM Plex Mono',monospace;font-size:.62rem;font-weight:700">🔗 Auditor Site</button>
-        <button onclick="auditorCopy('${s.parcel}', this)" style="flex:1;padding:5px 4px;background:transparent;color:var(--accent2);border:1px solid var(--accent2);border-radius:2px;cursor:pointer;font-family:'IBM Plex Mono',monospace;font-size:.62rem">📋 Copy PIN</button>
+        <button onclick="auditorOpen(sanitizeParcel('${s.parcel}'))" style="flex:1;padding:5px 4px;background:var(--accent);color:#0c0e12;border:none;border-radius:2px;cursor:pointer;font-family:'IBM Plex Mono',monospace;font-size:.62rem;font-weight:700">🔗 Auditor Site</button>
+        <button onclick="auditorCopy(sanitizeParcel('${s.parcel}'), this)" style="flex:1;padding:5px 4px;background:transparent;color:var(--accent2);border:1px solid var(--accent2);border-radius:2px;cursor:pointer;font-family:'IBM Plex Mono',monospace;font-size:.62rem">📋 Copy PIN</button>
       </div>
     </div>`;
 }
@@ -1987,7 +1987,7 @@ function buildFullPopup(s, color, d, flood){
 
   return `
     <div style="min-width:300px;max-width:330px">
-      <div class="pu-addr">${esc(d.SITEADDRESS||s.address||s.parcel)}</div>
+      <div class="pu-addr">${esc((cf.address ? d[cf.address] : null)||s.address||s.parcel)}</div>
 
       ${s.txn_parcel_count > 1 ? `<div style="background:#2a1f00;border:1px solid var(--accent);border-radius:2px;padding:4px 8px;margin-bottom:8px;font-family:'IBM Plex Mono',monospace;font-size:.6rem;color:var(--accent);line-height:1.5">⚠ Multi-parcel sale (${s.txn_parcel_count} parcels)<br><span style="color:var(--accent2)">✓ All parcels: BLDVALUE=0 &amp; TOTVALUE=LNDVALUE</span></div>` : ''}
       ${s.razed_flag ? `<div style="background:#1a0a1a;border:1px solid #e84ab0;border-radius:2px;padding:4px 8px;margin-bottom:8px;font-family:'IBM Plex Mono',monospace;font-size:.6rem;color:#e84ab0;line-height:1.6">🔥 Possible razed/redeveloped site<br>${s.razed_reasons.map(r=>'· '+r).join('<br>')}</div>` : ''}
@@ -2009,7 +2009,7 @@ function buildFullPopup(s, color, d, flood){
         ${row('Mail Address', mailAddr.slice(0,30)||'—')}
         ${row('Neighborhood', nbhd)}
         ${row('Use / Class', useDesc.slice(0,26))}
-        ${row('DTE Code', d.CLASSCD||s.class_cd||'—')}
+        ${row('Class Code', (cf.classcd ? d[cf.classcd] : null)||s.class_cd||'—')}
         ${row('Tax District', district)}
         ${row('School Dist.', school)}
       </div>
@@ -2037,10 +2037,10 @@ function buildFullPopup(s, color, d, flood){
       <div style="font-family:'IBM Plex Mono',monospace;font-size:.62rem;color:var(--muted);line-height:1.5;padding:4px 0">${legal}</div>` : ''}
 
       <div style="display:flex;gap:6px;margin-top:10px;padding-top:8px;border-top:1px solid #1f2736">
-        <button onclick="auditorOpen('${s.parcel}')" style="flex:1;padding:6px 4px;background:var(--accent);color:#0c0e12;border:none;border-radius:2px;cursor:pointer;font-family:'IBM Plex Mono',monospace;font-size:.62rem;font-weight:700;letter-spacing:.04em">
+        <button onclick="auditorOpen(sanitizeParcel('${s.parcel}'))" style="flex:1;padding:6px 4px;background:var(--accent);color:#0c0e12;border:none;border-radius:2px;cursor:pointer;font-family:'IBM Plex Mono',monospace;font-size:.62rem;font-weight:700;letter-spacing:.04em">
           🔗 Open Auditor Site
         </button>
-        <button onclick="auditorCopy('${s.parcel}', this)" style="flex:1;padding:6px 4px;background:transparent;color:var(--accent2);border:1px solid var(--accent2);border-radius:2px;cursor:pointer;font-family:'IBM Plex Mono',monospace;font-size:.62rem;letter-spacing:.04em">
+        <button onclick="auditorCopy(sanitizeParcel('${s.parcel}'), this)" style="flex:1;padding:6px 4px;background:transparent;color:var(--accent2);border:1px solid var(--accent2);border-radius:2px;cursor:pointer;font-family:'IBM Plex Mono',monospace;font-size:.62rem;letter-spacing:.04em">
           📋 Copy Parcel #
         </button>
       </div>
@@ -2691,7 +2691,7 @@ function renderGrid(){
     tr.innerHTML = `
       <td style="text-align:center;padding:4px 6px;">
         <input type="checkbox" class="sg-check" ${isSelected ? 'checked' : ''}
-          onclick="event.stopPropagation(); sgToggleComp('${s.parcel}', this)"
+          onclick="event.stopPropagation(); sgToggleComp(sanitizeParcel('${s.parcel}'), this)"
           title="Select as comp">
       </td>
       <td>${s.razed_flag ? '🔥 ' : ''}${esc(s.address || s.parcel)}</td>
@@ -2748,6 +2748,9 @@ function sgToggleComp(parcelId, checkbox){
 // ── END SALES GRID ────────────────────────────────────────────────────────────
 
 // ── AUDITOR SITE HELPERS ──────────────────────────────────────────────────────
+// Sanitize parcel ID — only allow alphanumeric, hyphens, dots (all county formats)
+function sanitizeParcel(p){ return String(p||'').replace(/[^a-zA-Z0-9\-.]/g,''); }
+
 function auditorOpen(parcel){
   const deepLinkFn = AUDITOR_DEEP_LINKS[activeCounty] || AUDITOR_DEEP_LINKS.franklin;
   const url = deepLinkFn(parcel);
@@ -3339,7 +3342,7 @@ function mobRenderGrid(){
     tr.innerHTML = `
       <td style="text-align:center;padding:4px 5px">
         <input type="checkbox" class="sg-check" ${isSelected?'checked':''}
-          onclick="event.stopPropagation();sgToggleComp('${s.parcel}',this)">
+          onclick="event.stopPropagation();sgToggleComp(sanitizeParcel('${s.parcel}'),this)">
       </td>
       <td>${s.razed_flag?'🔥 ':''}${(s.address||s.parcel).slice(0,22)}</td>
       <td class="td-muted">${fmtDate(s.sale_date)}</td>
@@ -3375,7 +3378,7 @@ function mobRenderComps(){
     div.innerHTML = s
       ? `<div style="font-weight:700;color:var(--accent2)">Comp ${i+1}</div><div>${(s.address||s.parcel).slice(0,20)}</div><div style="color:var(--accent)">${fmtFull(s.sale_price)}</div><div style="color:var(--muted);font-size:.5rem">tap to remove</div>`
       : `<div style="color:var(--border);font-size:1.2rem;text-align:center">${i+1}</div><div style="text-align:center;font-size:.5rem">empty</div>`;
-    if(s) div.onclick = () => { sgToggleComp(s.parcel, null); mobRenderComps(); };
+    if(s) div.onclick = () => { sgToggleComp(sanitizeParcel(s.parcel), null); mobRenderComps(); };
     slots.appendChild(div);
   }
   if(genBtn) genBtn.disabled = comps.length === 0;
