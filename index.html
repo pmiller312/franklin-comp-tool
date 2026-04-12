@@ -798,9 +798,9 @@ body.mobile-mode .sel-bar {
       <button class="btn btn-fetch" id="btn-fetch" onclick="runQuery()">⬇ Fetch Live Data from Auditor GIS</button>
       <button class="btn btn-clear" onclick="clearData()">Clear Results</button>
 
-      <div style="margin-top:8px;font-family:'IBM Plex Mono',monospace;font-size:.58rem;color:var(--muted);line-height:1.6;">
-        Source: <span style="color:var(--accent2)">gis.franklincountyohio.gov</span><br>
-        Updated: Mon–Fri nightly · No API key required
+      <div id="sidebar-source" style="margin-top:8px;font-family:'IBM Plex Mono',monospace;font-size:.58rem;color:var(--muted);line-height:1.6;">
+        Source: <span id="sidebar-source-name" style="color:var(--accent2)">Franklin County Auditor</span><br>
+        <span id="sidebar-source-url">gis.franklincountyohio.gov</span>
       </div>
 
       <!-- How to use -->
@@ -817,7 +817,7 @@ body.mobile-mode .sel-bar {
       <!-- Vacancy verification disclosure -->
       <div style="margin-top:10px;border:1px solid #2a3a2a;border-radius:3px;padding:8px 10px;background:#0d130d;font-family:'IBM Plex Mono',monospace;font-size:.57rem;line-height:1.65;">
         <div style="color:#4ae8b0;font-weight:700;letter-spacing:.06em;margin-bottom:4px;">✓ VACANCY VERIFICATION</div>
-        <div style="color:#8a9a8a;">All results are filtered to <span style="color:var(--text);">Ohio DTE vacant land class codes</span> (100, 110, 300, 400, 500–505) and pass a <span style="color:var(--text);">dual improvement test</span> on every parcel: <span style="color:var(--text);">① BLDVALUEBASE = 0</span> and <span style="color:var(--text);">② TOTVALUEBASE = LNDVALUEBASE</span> (no improvement component in assessed value). Optionally filter further by <span style="color:var(--text);">Max Improvement Value</span> to allow a small tolerance.</div>
+        <div id="vacancy-detail" style="color:#8a9a8a;">All results are filtered to <span style="color:var(--text);">Ohio DTE vacant land class codes</span> and pass an <span style="color:var(--text);">improvement value test</span> on every parcel. Optionally filter further by <span style="color:var(--text);">Max Improvement Value</span> to allow a small tolerance.</div>
         <div style="margin-top:5px;color:#8a9a8a;">For multi-parcel sales, <span style="color:var(--text);">all parcels</span> in the same deed (matched by date + price + owner) must pass — if any parcel carries building value, the entire sale is excluded.</div>
         <div style="margin-top:5px;border-top:1px solid #1a2a1a;padding-top:5px;color:#5a6a5a;">🛰 <em>Imagery:</em> Button cycles Dark → OSIP Ohio (6-inch, public domain, © OGRIP/OIT) → Esri World Imagery. OSIP is Ohio-specific leaf-off orthoimagery; resolution and vintage vary by county.<br><br>⚠ <em>Razed-site detection</em> is heuristic. Signals: keyword match in legal/deed (strongest, +3), utilities on vacant parcel (+1/+2), sale price 20×+ assessed land (+1/+2), platted lot number (+1). Score ≥ 2 = flagged. Note: Ohio assesses at ~35% of market so normal vacant land already trades at 5-6× assessed — only extreme outliers (20×+) are scored. Both improvement tests reflect assessed values, not physical inspections. A recently demolished structure or assessment lag could cause either field to lag behind reality. Independent verification is recommended for individual comps.</div>
       </div>
@@ -1006,6 +1006,7 @@ const COUNTY_CONFIG = {
     priceField: 'SALEPRICE',
     coordSR:    3735,   // Ohio State Plane South (feet) — convert to lat/lng
     coordConvert: true,
+    sourceUrl:  'gis.franklincountyohio.gov',
   },
 
   cuyahoga: {
@@ -1055,7 +1056,8 @@ const COUNTY_CONFIG = {
     acresFactor: 1/43560,  // PAR_LOT_SZE is in square feet — convert to acres
     coordSR:    4326,   // already WGS84 lat/lng in geometry
     coordConvert: false,
-    singlePage: true,   // ArcGIS Online FeatureServer rejects resultOffset — fetch one page only
+    singlePage: true,
+    sourceUrl:  'services7.arcgis.com (Cuyahoga Open Data)',   // ArcGIS Online FeatureServer rejects resultOffset — fetch one page only
   },
 
   delaware: {
@@ -1104,6 +1106,7 @@ const COUNTY_CONFIG = {
     coordSR:    4326,
     coordConvert: false,
     singlePage: false,
+    sourceUrl:  'maps.delco-gis.org',
   },
 
   medina: {
@@ -1153,6 +1156,7 @@ const COUNTY_CONFIG = {
     coordSR:      4326,
     coordConvert: false,
     singlePage:   false,  // FeatureServer supports offset pagination fine
+    sourceUrl:    'services5.arcgis.com (Medina Auditor)',
   },
 };
 
@@ -3462,6 +3466,12 @@ function switchCounty(key){
   // Update header logo
   const logo = document.getElementById('hdr-logo');
   if(logo) logo.innerHTML = `${COUNTY_CONFIG[key].name} <span>Vacant Land</span> Sales`;
+
+  // Update sidebar source blurb
+  const srcName = document.getElementById('sidebar-source-name');
+  const srcUrl  = document.getElementById('sidebar-source-url');
+  if(srcName) srcName.textContent = `${COUNTY_CONFIG[key].name} Auditor`;
+  if(srcUrl)  srcUrl.textContent  = COUNTY_CONFIG[key].sourceUrl || '';
 
   // Update map center/zoom for the county
   const centers = {
