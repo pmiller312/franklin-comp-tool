@@ -1319,11 +1319,32 @@ async function queryFloodZone(lat, lng){
 }
 
 // Franklin County Recorder deed search URL
-// Per-county auditor property search URLs
+// Per-county auditor property search URLs and deep-link functions
+// deepLink(parcel): returns a URL that goes directly to (or as close as possible to) the parcel record
+const AUDITOR_DEEP_LINKS = {
+  // Franklin: search page — PIN is copied to clipboard, user pastes in box
+  franklin:  (p) => `https://property.franklincountyauditor.com/_web/search/commonsearch.aspx?mode=parid`,
+  // Cuyahoga: MyPlace home — no parcel deep link available (POST-only form)
+  cuyahoga:  (p) => `https://myplace.cuyahogacounty.gov/`,
+  // Delaware: GIS auditor — no GET deep link, open search page
+  delaware:  (p) => `https://auditor.delco-gis.org/`,
+  // Medina: SearchResults?searchTerm= returns exactly 1 result — best available deep link
+  medina:    (p) => `https://auditor.medinacounty.gov/SearchResults?searchTerm=${encodeURIComponent(p)}`,
+};
+
+// Labels for each county's auditor button — explains what will happen
+const AUDITOR_BUTTON_LABELS = {
+  franklin:  '🔗 Open Auditor (copy PIN)',
+  cuyahoga:  '🔗 Open Auditor',
+  delaware:  '🔗 Open Auditor',
+  medina:    '🔗 Open Auditor (direct)',
+};
+
+// Legacy — used by switchCounty for the sidebar source display
 const AUDITOR_URLS = {
   franklin:  'https://property.franklincountyauditor.com/_web/search/commonsearch.aspx?mode=parid',
-  cuyahoga:  'https://fiscalapp.cuyahogacounty.gov/#!/search',
-  delaware:  'https://auditor.co.delaware.oh.us/query/',
+  cuyahoga:  'https://myplace.cuyahogacounty.gov/',
+  delaware:  'https://auditor.delco-gis.org/',
   medina:    'https://auditor.medinacounty.gov/Search',
 };
 
@@ -2728,10 +2749,17 @@ function sgToggleComp(parcelId, checkbox){
 
 // ── AUDITOR SITE HELPERS ──────────────────────────────────────────────────────
 function auditorOpen(parcel){
-  navigator.clipboard.writeText(parcel).catch(()=>{});
-  const url = AUDITOR_URLS[activeCounty] || AUDITOR_URLS.franklin;
+  const deepLinkFn = AUDITOR_DEEP_LINKS[activeCounty] || AUDITOR_DEEP_LINKS.franklin;
+  const url = deepLinkFn(parcel);
+  // For counties with no real deep link, copy PIN to clipboard so user can paste
+  const needsCopy = activeCounty === 'franklin' || activeCounty === 'cuyahoga' || activeCounty === 'delaware';
+  if(needsCopy){
+    navigator.clipboard.writeText(parcel).catch(()=>{});
+    toast(`Parcel ${parcel} copied — paste into the search box`);
+  } else {
+    toast(`Opening parcel ${parcel}…`);
+  }
   window.open(url, '_blank');
-  toast(`Parcel ${parcel} copied — paste into the search box`);
 }
 
 function auditorCopy(parcel, btn){
