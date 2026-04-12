@@ -1172,9 +1172,12 @@ var GIS_BASE = COUNTY_CONFIG.franklin.endpoint;
 // Ohio State Plane South (EPSG:3735) → WGS84 conversion
 // Franklin County is in Ohio SP South zone
 // We'll request geometry in WGS84 (outSR=4326) directly from the API
+let _fieldsCache = null;  // cleared on county switch
 function getFields(){
+  if(_fieldsCache) return _fieldsCache;
   const f = countyConf().fields;
-  return [...new Set(Object.values(f).filter(Boolean))].join(",");
+  _fieldsCache = [...new Set(Object.values(f).filter(Boolean))].join(",");
+  return _fieldsCache;
 }
 
 // ── MAP ───────────────────────────────────────────────────────────────────────
@@ -1610,7 +1613,7 @@ async function runQuery(){
   } catch(e){
     let msg = e.message || String(e);
     if(msg.includes('400') || msg.toLowerCase().includes('invalid query') || msg.toLowerCase().includes('unable to perform')){
-      msg = `${countyConf().name} service temporarily unavailable — please try again in a moment.`;
+      msg = `${cc.name} service temporarily unavailable — please try again in a moment.`;
     } else if(msg.includes('Failed to fetch') || msg.includes('NetworkError')){
       msg = 'Network error — check your connection and try again.';
     }
@@ -1700,10 +1703,20 @@ async function paginatedQuery(where, maxRecords){
         orderByFields: `${cc.fields.saleDate} DESC`,
       });
       const url = `${cc.endpoint}?${params}`;
-      const resp = await fetch(url);
-      if(!resp.ok) throw new Error(`HTTP ${resp.status}: ${resp.statusText}`);
+      let resp;
+      try {
+        resp = await fetch(url);
+      } catch(netErr) {
+        throw new Error(`Network error on page ${Math.floor(offset/count)+1}: ${netErr.message}`);
+      }
+      if(!resp.ok) throw new Error(`HTTP ${resp.status} on page ${Math.floor(offset/count)+1} — ${cc.name} service may be temporarily unavailable`);
 
-      const data = await resp.json();
+      let data;
+      try {
+        data = await resp.json();
+      } catch(parseErr) {
+        throw new Error(`Invalid response from ${cc.name} on page ${Math.floor(offset/count)+1}`);
+      }
       if(data.error) throw new Error(data.error.message || JSON.stringify(data.error));
 
       const features = data.features || [];
@@ -1934,7 +1947,10 @@ async function fetchParcelDetail(parcelId){
     if(data.error || !data.features?.length) return null;
     // Support both json (.attributes) and geojson (.properties) responses
     return data.features[0].attributes || data.features[0].properties || null;
-  } catch(e){ return null; }
+  } catch(e){
+    console.warn(`fetchParcelDetail(${parcelId}) failed:`, e.message);
+    return null;
+  }
 }
 
 function buildQuickPopup(s, color){
@@ -1964,8 +1980,9 @@ function buildQuickPopup(s, color){
 function buildFullPopup(s, color, d, flood){
   // d = flat GIS attributes object from fetchParcelDetail (county-aware)
   // Use county field mapping so all counties display correctly
-  const cf = countyConf().fields;
-  const acresFactor = countyConf().acresFactor || 1;
+  const _cc = countyConf();
+  const cf = _cc.fields;
+  const acresFactor = _cc.acresFactor || 1;
   const acresRaw = cf.acres ? d[cf.acres] : null;
   const acres   = (acresRaw != null ? acresRaw * acresFactor : null) || s.acres || 0;
   const sqft    = acres>0 ? Math.round(acres*43560).toLocaleString()+' SF' : '—';
@@ -2551,7 +2568,8 @@ function setGridSize(px, skipActive){
   pane.classList.add('animating');
   pane.classList.remove('collapsed');
   pane.style.height = px + 'px';
-  document.getElementById('grid-toggle').textContent = '▼';
+  const _gt = document.getElementById('grid-toggle');
+  if(_gt) _gt.textContent = '▼';
   setTimeout(() => pane.classList.remove('animating'), 280);
   // Update active size button
   if(!skipActive){
@@ -2659,6 +2677,21 @@ function sortGrid(col){
   renderGrid();
 }
 
+// Lightweight: update only selected-row highlights without full re-render
+function refreshGridSelState(){
+  const tbody = document.getElementById('sg-body');
+  if(!tbody) return;
+  const selectedParcels = new Set(selectedComps.map(c => c.parcel));
+  tbody.querySelectorAll('tr[data-parcel]').forEach(row => {
+    const p = row.dataset.parcel;
+    const sel = selectedParcels.has(p);
+    row.classList.toggle('sg-selected', sel);
+    const cb = row.querySelector('input.sg-check');
+    if(cb) cb.checked = sel;
+  });
+  mobOnRender();
+}
+
 function renderGrid(){
   const filtered = getFiltered();
   const tbody = document.getElementById('sg-body');
@@ -2686,6 +2719,7 @@ function renderGrid(){
   rows.forEach(s => {
     const isSelected = typeof selectedComps !== 'undefined' && selectedComps.some(c => c.parcel === s.parcel);
     const tr = document.createElement('tr');
+    tr.dataset.parcel = s.parcel;
     if(isSelected) tr.classList.add('sg-selected');
     if(s.razed_flag) tr.classList.add('sg-flagged');
 
@@ -2746,10 +2780,9 @@ function sgToggleComp(parcelId, checkbox){
     selectedComps.push(s);
     checkbox.checked = true;
   }
-  // Sync with existing comp selection UI
+  // Sync selection UI and row highlights (lightweight — no full grid rebuild)
   updateSelBar();
-  // Re-render grid to update row highlight
-  renderGrid();
+  refreshGridSelState();
 }
 
 // ── END SALES GRID ────────────────────────────────────────────────────────────
@@ -2810,19 +2843,19 @@ function toggleCompSelection(s){
     selectedComps.push(s);
   }
   updateSelUI();
-  render();
+  refreshGridSelState();
 }
 
 function removeComp(i){
   selectedComps.splice(i, 1);
   updateSelUI();
-  render();
+  refreshGridSelState();
 }
 
 function clearSelection(){
   selectedComps = [];
   updateSelUI();
-  render();
+  refreshGridSelState();
 }
 
 function updateSelUI(){
@@ -2863,7 +2896,7 @@ async function generateSalesSheet(){
 
   // Fetch full GIS detail for each selected comp
   const [detailsArr, floodsArr] = await Promise.all([
-    Promise.all(selectedComps.map(s => fetchParcelDetail(s.parcel))),
+    Promise.all(selectedComps.map(s => fetchParcelDetail(s.parcel).catch(() => ({})))),
     Promise.all(selectedComps.map(s => queryFloodZone(s.lat, s.lng)))
   ]);
 
@@ -2872,7 +2905,8 @@ async function generateSalesSheet(){
     const d = detailsArr[i] || {};
     const fz = floodsArr[i];
     // Use county field mapping so non-Franklin counties populate correctly
-    const cf    = countyConf().fields;
+    const _ccg   = countyConf();
+    const cf     = _ccg.fields;
     const acres = (cf.acres ? d[cf.acres] : null) || s.acres || 0;
     const sqft      = acres > 0 ? (acres * 43560).toFixed(0) : '';
     const ppa_gross = acres > 0 ? (s.sale_price / acres).toFixed(2) : '';
@@ -2892,7 +2926,7 @@ async function generateSalesSheet(){
 
     return {
       address:    addrVal,
-      county:     countyConf().name,
+      county:     _ccg.name,
       township:   distVal,
       city:       '',
       state:      'Ohio',
@@ -3500,6 +3534,8 @@ function switchCounty(key){
   if(!COUNTY_CONFIG[key]) return;
   activeCounty = key;
   GIS_BASE = COUNTY_CONFIG[key].endpoint;
+
+  _fieldsCache = null;   // reset field list cache for new county
 
   // Update header logo
   const logo = document.getElementById('hdr-logo');
