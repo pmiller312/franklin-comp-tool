@@ -1710,7 +1710,8 @@ function processResults(features, dateFrom, dateTo){
       // Sanity check coords — Ohio state bounds
       if(lat < 38.3 || lat > 42.3 || lng < -85.0 || lng > -80.4) return null;
 
-      const f2 = countyConf().fields;
+      const cc = countyConf();
+      const f2 = cc.fields;
       const bldRaw  = f2.bldVal ? (p[f2.bldVal] || 0) : 0;
       const totVal  = f2.totVal ? (p[f2.totVal] || 0) : 0;
       const lndVal  = f2.lndVal ? (p[f2.lndVal] || 0) : 0;
