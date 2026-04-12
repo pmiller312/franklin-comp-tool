@@ -617,7 +617,7 @@ body.mobile-mode .sel-bar {
 
     <!-- Query builder -->
     <div class="query-panel">
-      <div class="qp-title">🔍 ArcGIS Query Builder</div>
+      <div class="qp-title">🔍 Query Filters</div>
 
       <div class="field-row">
         <div class="field-label">Sale Date Range</div>
@@ -799,8 +799,8 @@ body.mobile-mode .sel-bar {
       <button class="btn btn-clear" onclick="clearData()">Clear Results</button>
 
       <div id="sidebar-source" style="margin-top:8px;font-family:'IBM Plex Mono',monospace;font-size:.58rem;color:var(--muted);line-height:1.6;">
-        Source: <span id="sidebar-source-name" style="color:var(--accent2)">Franklin County Auditor</span><br>
-        <span id="sidebar-source-url" style="display:none">gis.franklincountyohio.gov</span>
+        <span id="sidebar-source-name" style="color:var(--accent2)">Franklin County Auditor</span>
+        <span id="sidebar-source-url" style="display:none"></span>
       </div>
 
       <!-- How to use -->
@@ -861,7 +861,7 @@ body.mobile-mode .sel-bar {
     <div class="source-badge" id="source-badge" style="position:relative">
       <button class="overlay-hide-btn" onclick="hideOverlay('source-badge')" title="Hide">×</button>
       <span class="warn">⚠ No data loaded</span><br>
-      Set filters and click <strong>Fetch Live Data</strong>
+      Set filters and click <strong>Search Data</strong>
     </div>
     <div class="legend" id="map-legend" style="position:absolute">
       <button class="overlay-hide-btn" onclick="hideOverlay('map-legend')" title="Hide">×</button>
@@ -2173,7 +2173,7 @@ function clearData(){
   document.getElementById('s-avg').textContent = '—';
   document.getElementById('s-ppa').textContent = '—';
   document.getElementById('freshness-tag').textContent = 'No data loaded';
-  document.getElementById('source-badge').innerHTML = '<span class="warn">⚠ No data loaded</span><br>Set filters and click <strong>Fetch Live Data</strong>';
+  document.getElementById('source-badge').innerHTML = '<span class="warn">⚠ No data loaded</span><br>Set filters and click <strong>Search Data</strong>';
   document.getElementById('reg-btn').disabled = true;
   document.getElementById('hdr-gen-btn').disabled = true;
   document.getElementById('sel-mode-btn').disabled = true;
