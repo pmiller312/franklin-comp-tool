@@ -795,12 +795,12 @@ body.mobile-mode .sel-bar {
         </select>
       </div>
 
-      <button class="btn btn-fetch" id="btn-fetch" onclick="runQuery()">⬇ Fetch Live Data from Auditor GIS</button>
+      <button class="btn btn-fetch" id="btn-fetch" onclick="runQuery()">Search Data</button>
       <button class="btn btn-clear" onclick="clearData()">Clear Results</button>
 
       <div id="sidebar-source" style="margin-top:8px;font-family:'IBM Plex Mono',monospace;font-size:.58rem;color:var(--muted);line-height:1.6;">
         Source: <span id="sidebar-source-name" style="color:var(--accent2)">Franklin County Auditor</span><br>
-        <span id="sidebar-source-url">gis.franklincountyohio.gov</span>
+        <span id="sidebar-source-url" style="display:none">gis.franklincountyohio.gov</span>
       </div>
 
       <!-- How to use -->
@@ -1612,7 +1612,7 @@ async function runQuery(){
   } finally {
     isFetching = false;
     btn.disabled = false;
-    btn.textContent = '⬇ Fetch Live Data from Auditor GIS';
+    btn.textContent = 'Search Data';
     document.getElementById('progress-wrap').style.display = 'none';
   }
 }
@@ -3633,7 +3633,7 @@ document.getElementById('q-date-to').value =
       </div>
       <!-- Sticky fetch button -->
       <div class="mob-fetch-strip">
-        <button class="btn btn-fetch" id="mob-btn-fetch" onclick="mobFetch()">⬇ Fetch Live Data</button>
+        <button class="btn btn-fetch" id="mob-btn-fetch" onclick="mobFetch()">Search Data</button>
       </div>
     </div>
 
