@@ -785,7 +785,7 @@ body.mobile-mode .sel-bar {
       </div>
 
       <div class="field-row">
-        <div class="field-label">Max Records to Fetch</div>
+        <div class="field-label">Max Records</div>
         <select id="q-limit">
           <option value="500">500</option>
           <option value="1000" selected>1,000</option>
@@ -807,7 +807,7 @@ body.mobile-mode .sel-bar {
       <div style="margin-top:10px;border:1px solid #1f2736;border-radius:3px;padding:8px 10px;background:#0a0c10;font-family:'IBM Plex Mono',monospace;font-size:.57rem;line-height:1.65;">
         <div style="color:var(--accent);font-weight:700;letter-spacing:.06em;margin-bottom:4px;">HOW TO SELECT COMPS</div>
         <div style="color:#8a9a8a;">
-          1. <span style="color:var(--text)">Fetch data</span> using the query above<br>
+          1. <span style="color:var(--text)">Search</span> using the filters above<br>
           2. Click <span style="color:var(--accent2)">☑ Select Comps</span> button (appears above results list)<br>
           3. <span style="color:var(--text)">Click dots on the map</span> or <span style="color:var(--text)">items in the list</span> to select up to 5 sales<br>
           4. Click <span style="color:var(--accent2)">⬇ Generate Sales Sheet</span> to download a DOCX comp data sheet
@@ -888,7 +888,7 @@ body.mobile-mode .sel-bar {
         </div>
       </div>
       <div class="reg-body" id="reg-body">
-        <div class="reg-empty">Fetch data then open Regression Analysis</div>
+        <div class="reg-empty">Search data then open Regression Analysis</div>
       </div>
     </div>
   </div>
@@ -1548,7 +1548,7 @@ async function runQuery(){
 
   const btn = document.getElementById('btn-fetch');
   btn.disabled = true;
-  btn.textContent = '⏳ Fetching…';
+  btn.textContent = '⏳ Searching…';
 
   document.getElementById('progress-wrap').style.display = 'block';
   setProgress(5, 'Building query…');
@@ -1636,7 +1636,7 @@ async function paginatedQuery(where, maxRecords){
         setProgress(10 + attempt*15, `Retrying… (attempt ${attempt+1}/${MAX_RETRIES})`);
         await new Promise(r => setTimeout(r, 1500 * attempt)); // 0s, 1.5s, 3s
       } else {
-        setProgress(30, `Fetching records…`);
+        setProgress(30, `Searching…`);
       }
       // Try geojson first, fall back to json on second attempt
       const fmt = attempt === 1 ? 'json' : 'geojson';
@@ -1679,7 +1679,7 @@ async function paginatedQuery(where, maxRecords){
 
       setProgress(
         Math.min(90, 5 + (allFeatures.length/maxRecords)*85),
-        `Fetching records <span class="progress-count">${allFeatures.length.toLocaleString()}</span> → ${maxRecords.toLocaleString()}…`
+        `Searching <span class="progress-count">${allFeatures.length.toLocaleString()}</span> of ${maxRecords.toLocaleString()}…`
       );
 
       const params = new URLSearchParams({
@@ -1850,7 +1850,7 @@ function processResults(features, dateFrom, dateTo){
   const cc2 = countyConf();
   document.getElementById('source-badge').innerHTML =
     `<button class="overlay-hide-btn" onclick="hideOverlay('source-badge')" title="Hide">×</button>` +
-    `<span class="live">● LIVE DATA</span> — ${cc2.name} Auditor<br>` +
+    `<span class="live">● ${cc2.name} Auditor</span><br>` +
     `${allSales.length.toLocaleString()} vacant land sales · ${isoToMDY(dateFrom)} → ${isoToMDY(dateTo)}`;
 
   toast(`✓ Loaded ${allSales.length.toLocaleString()} real sales`);
@@ -2160,7 +2160,7 @@ function isoToMDY(iso){ const [y,m,d]=(iso||'').split('-'); return m&&d&&y?`${m}
 function updateFreshnessTag(from, to){
   const now = new Date().toLocaleString('en-US',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'});
   document.getElementById('freshness-tag').innerHTML =
-    `<strong>LIVE</strong> · fetched ${now} · ${isoToMDY(from)} → ${isoToMDY(to)}`;
+    `<strong>Results</strong> · searched ${now} · ${isoToMDY(from)} → ${isoToMDY(to)}`;
 }
 
 function clearData(){
@@ -2852,7 +2852,7 @@ async function generateSalesSheet(){
     document.getElementById('hdr-gen-btn')
   ].filter(Boolean);
   allGenBtns.forEach(b => { b.disabled = true; b.textContent = '⏳ Building…'; });
-  toast('Fetching full detail for ' + selectedComps.length + ' comp(s)…');
+  toast('Loading detail for ' + selectedComps.length + ' comp(s)…');
 
   // Fetch full GIS detail for each selected comp
   const [detailsArr, floodsArr] = await Promise.all([
