@@ -8,7 +8,6 @@
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=IBM+Plex+Mono:wght@400;500&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin="anonymous"></script>
-<script src="https://unpkg.com/esri-leaflet@3.0.12/dist/esri-leaflet.js" crossorigin="anonymous"></script>
 <style>
 :root {
   --bg:#0c0e12; --panel:#131720; --border:#1f2736; --accent:#e8c84a;
@@ -821,7 +820,7 @@ body.mobile-mode .sel-bar {
         <div style="color:#4ae8b0;font-weight:700;letter-spacing:.06em;margin-bottom:4px;">✓ VACANCY VERIFICATION</div>
         <div id="vacancy-detail" style="color:#8a9a8a;">All results are filtered to <span style="color:var(--text);">Ohio DTE vacant land class codes</span>. <span style="color:var(--text);">Max Improvement Value</span> sets the improvement value test applied to every parcel: <span style="color:var(--text);">= $0</span> is strictly vacant, a dollar amount allows a small tolerance, and <span style="color:var(--text);">Any</span> applies no improvement test.</div>
         <div style="margin-top:5px;color:#8a9a8a;">When a limit is set, <span style="color:var(--text);">all parcels</span> in a multi-parcel sale (matched by date + price + owner) must pass — if any parcel exceeds the limit, the entire sale is excluded.</div>
-        <div style="margin-top:5px;border-top:1px solid #1a2a1a;padding-top:5px;color:#5a6a5a;">🛰 <em>Imagery:</em> Button cycles Dark → OSIP Ohio (6-inch, public domain, © OGRIP/OIT) → Esri World Imagery. OSIP is Ohio-specific leaf-off orthoimagery; resolution and vintage vary by county.<br><br>⚠ <em>Razed-site detection</em> is heuristic. Signals: keyword match in legal/deed (strongest, +3), utilities on vacant parcel (+1/+2), sale price 20×+ assessed land (+1/+2), platted lot number (+1). Score ≥ 2 = flagged. Note: Ohio assesses at ~35% of market so normal vacant land already trades at 5-6× assessed — only extreme outliers (20×+) are scored. Both improvement tests reflect assessed values, not physical inspections. A recently demolished structure or assessment lag could cause either field to lag behind reality. Independent verification is recommended for individual comps.</div>
+        <div style="margin-top:5px;border-top:1px solid #1a2a1a;padding-top:5px;color:#5a6a5a;">🛰 <em>Imagery:</em> The map opens on Esri World Imagery. The button cycles to the dark map, then OSIP Ohio (6-inch, public domain, © OGRIP / Ohio DAS), then back to Esri. OSIP is Ohio-specific leaf-off orthoimagery; resolution and vintage vary by county.<br><br>⚠ <em>Razed-site detection</em> is heuristic. Signals: keyword match in legal/deed (strongest, +3), utilities on vacant parcel (+1/+2), sale price 20×+ assessed land (+1/+2), platted lot number (+1). Score ≥ 2 = flagged. Note: Ohio assesses at ~35% of market so normal vacant land already trades at 5-6× assessed — only extreme outliers (20×+) are scored. Both improvement tests reflect assessed values, not physical inspections. A recently demolished structure or assessment lag could cause either field to lag behind reality. Independent verification is recommended for individual comps.</div>
       </div>
     </div>
 
@@ -1186,42 +1185,51 @@ function getFields(){
 const map = L.map('map',{zoomControl:false}).setView([39.98,-82.99],11);
 
 // Base layers
-const darkLayer = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',{
-  attribution:'© OpenStreetMap © CARTO', maxZoom:19
-});
+// CARTO's free basemaps now watermark every tile with "API KEY REQUIRED",
+// so the dark basemap uses Esri's Dark Gray Canvas (no key needed).
+const ESRI_ATTR = 'Tiles © Esri — Esri, HERE, Garmin, © OpenStreetMap contributors';
+const darkLayer = L.layerGroup([
+  L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}',{
+    attribution: ESRI_ATTR, maxZoom:19
+  }),
+  L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Reference/MapServer/tile/{z}/{y}/{x}',{
+    maxZoom:19
+  })
+]);
 // OSIP — Ohio Statewide Imagery Program, 6-inch resolution, public domain
-// Collected by OGRIP/OIT Ohio; best available vintage per county
-// Uses esri-leaflet ImageMapLayer which handles ArcGIS ImageServer CORS natively
-const osipLayer = L.esri.imageMapLayer({
-  url: 'https://geo.oit.ohio.gov/arcgis/rest/services/OSIP/OSIP_6in_best_avail/ImageServer',
-  opacity: 1,
-  attribution: 'Ohio Statewide Imagery Program (OSIP) © OGRIP/OIT Ohio — Public Domain'
+// Collected by OGRIP / Ohio DAS; best available vintage per county.
+// Served as a cached tile service (the old geo.oit.ohio.gov ImageServer is gone).
+const osipLayer = L.tileLayer(
+  'https://maps.ohio.gov/image/rest/services/osip_most_current_cache/MapServer/tile/{z}/{y}/{x}',{
+  attribution:'Ohio Statewide Imagery Program (OSIP) — © OGRIP / Ohio DAS, public domain', maxZoom:20
 });
-// If OSIP server is unavailable (503 etc), fall back to Esri World automatically
-osipLayer.on('requesterror', function() {
-  if(aerialMode === 1) {
-    toast('⚠ OSIP server unavailable — switching to Esri World Imagery', true);
-    map.removeLayer(osipLayer);
-    esriLayer.addTo(map);
-    const btn = document.getElementById('aerial-btn');
-    btn.style.background = '#4a8ae8';
-    btn.style.color = '#fff';
-    btn.textContent = '🛰 Esri World';
-    aerialMode = 2;
-  }
+// If the OSIP service is unavailable, fall back to Esri World Imagery automatically
+var _osipErrors = 0;
+osipLayer.on('tileerror', function(){
+  if(aerialMode !== 1) return;
+  if(++_osipErrors < 8) return;       // ignore the odd missing tile at the edges
+  _osipErrors = 0;
+  toast('⚠ OSIP imagery unavailable — switching to Esri World Imagery', true);
+  setAerialMode(2);
 });
-// Esri World Imagery — fallback / comparison layer
+osipLayer.on('tileload', function(){ _osipErrors = 0; });
+// Esri World Imagery — the default view
 const esriLayer = L.tileLayer(
   'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{
   attribution:'Tiles © Esri — Source: Esri, USGS, NOAA', maxZoom:19
 });
-// Street label overlay — keeps road names readable over any imagery
-const labelLayer = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_only_labels/{z}/{x}/{y}{r}.png',{
-  attribution:'© OpenStreetMap © CARTO', maxZoom:20, pane:'shadowPane'
-});
+// Street / place label overlay — keeps road names readable over any imagery
+const labelLayer = L.layerGroup([
+  L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Transportation/MapServer/tile/{z}/{y}/{x}',{
+    attribution: ESRI_ATTR, maxZoom:19, pane:'shadowPane'
+  }),
+  L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}',{
+    maxZoom:19, pane:'shadowPane'
+  })
+]);
 
-darkLayer.addTo(map);
 L.control.zoom({position:'topright'}).addTo(map);
+// Default basemap is set below (setAerialMode) once markerLayer and the button exist
 
 // ── FEMA NFHL FLOOD OVERLAY ───────────────────────────────────────────────────
 // Strategy: use hazards.fema.gov/arcgis exportMap as a plain <img> tile
@@ -1470,22 +1478,27 @@ function floodZoneLabel(z){
   return map[z.toUpperCase()] || z;
 }
 var markerLayer = L.layerGroup().addTo(map);
-// aerialMode: 0=dark, 1=OSIP, 2=Esri
-var aerialMode = 0;
+// aerialMode: 0=dark, 1=OSIP, 2=Esri — the map opens on Esri aerial
+var aerialMode = 2;
 
 function cycleAerial(){
+  setAerialMode((aerialMode + 1) % 3);
+}
+
+// 0 = dark basemap, 1 = OSIP Ohio imagery, 2 = Esri World Imagery
+function setAerialMode(mode){
   // Remove all base layers and labels first
   [darkLayer, osipLayer, esriLayer, labelLayer].forEach(l => {
     if(map.hasLayer(l)) map.removeLayer(l);
   });
-  aerialMode = (aerialMode + 1) % 3;
+  aerialMode = mode;
   const btn = document.getElementById('aerial-btn');
   if(aerialMode === 0){
     darkLayer.addTo(map);
     btn.classList.remove('active');
     btn.style.background = '';
     btn.style.color = '';
-    btn.textContent = '🛰 Aerial';
+    btn.textContent = '🛰 Dark Map';
   } else if(aerialMode === 1){
     osipLayer.addTo(map);
     labelLayer.addTo(map);
@@ -3638,6 +3651,9 @@ function switchCounty(key){
 }
 
 // ── INIT ──────────────────────────────────────────────────────────────────────
+// Open on Esri World Imagery (aerial) with street labels
+setAerialMode(2);
+
 // Set default "to" date to today
 const _t = new Date();
 document.getElementById('q-date-to').value =
