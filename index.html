@@ -33,12 +33,12 @@ header{
 
 .main{display:grid;grid-template-columns:300px 1fr;overflow:hidden;}
 .right-pane{display:flex;flex-direction:column;overflow:hidden;min-height:0;}
-.map-wrap{flex:1;position:relative;min-height:0;}
+.map-wrap{flex:1;position:relative;min-height:0;overflow:hidden;} /* clips the closed regression drawer so it can't cover the grid */
 
 /* ── SIDEBAR ── */
-.sidebar{background:var(--panel);border-right:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden;}
+.sidebar{background:var(--panel);border-right:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden;position:relative;min-height:0;}
 
-.query-panel{padding:14px;border-bottom:1px solid var(--border);}
+.query-panel{padding:14px;border-bottom:1px solid var(--border);flex:0 1 auto;min-height:0;overflow-y:auto;}
 .qp-title{font-family:'IBM Plex Mono',monospace;font-size:.6rem;color:var(--muted);text-transform:uppercase;letter-spacing:.12em;margin-bottom:10px;}
 
 .field-row{display:flex;flex-direction:column;gap:3px;margin-bottom:8px;}
@@ -90,7 +90,7 @@ body.mobile-mode .query-panel .btn-clear { display: none; }
 
 /* Results list */
 .results-header{padding:5px 8px 5px 12px;font-family:'IBM Plex Mono',monospace;font-size:.58rem;color:var(--muted);text-transform:uppercase;letter-spacing:.1em;border-bottom:1px solid var(--border);flex-shrink:0;display:flex;align-items:center;justify-content:space-between;gap:6px;}
-.results-list{flex:1;overflow-y:auto;}
+.results-list{flex:1;overflow-y:auto;min-height:160px;}
 .results-list::-webkit-scrollbar{width:3px;}
 .results-list::-webkit-scrollbar-thumb{background:var(--border);}
 .result-item{padding:9px 12px;border-bottom:1px solid rgba(31,39,54,.7);cursor:pointer;transition:background .12s;}
@@ -282,7 +282,7 @@ table.sg td.td-muted{color:var(--muted);}
   position:absolute;bottom:0;left:0;right:0;z-index:2000;
   background:var(--panel);border-top:2px solid var(--accent2);
   transform:translateY(100%);transition:transform .3s ease;
-  max-height:70vh;display:flex;flex-direction:column;
+  max-height:min(70vh,100%);display:flex;flex-direction:column;
 }
 .reg-drawer.open{transform:translateY(0);}
 .reg-drawer-header{
@@ -355,6 +355,8 @@ body.mobile-mode .sidebar { display:none; }   /* hidden — content shown in pan
 body.mobile-mode .right-pane { height:100%; display:flex; flex-direction:column; }
 body.mobile-mode .map-wrap { flex:1; min-height:0; }
 body.mobile-mode .grid-pane { display:none; } /* hidden — shown in panel */
+body.mobile-mode .grid-resize-handle,
+body.mobile-mode .sidebar-toggle { display:none; }
 
 /* Map control buttons */
 body.mobile-mode .aerial-btn { top:8px; right:44px; font-size:.52rem; padding:3px 7px; }
@@ -817,8 +819,8 @@ body.mobile-mode .sel-bar {
       <!-- Vacancy verification disclosure -->
       <div style="margin-top:10px;border:1px solid #2a3a2a;border-radius:3px;padding:8px 10px;background:#0d130d;font-family:'IBM Plex Mono',monospace;font-size:.57rem;line-height:1.65;">
         <div style="color:#4ae8b0;font-weight:700;letter-spacing:.06em;margin-bottom:4px;">✓ VACANCY VERIFICATION</div>
-        <div id="vacancy-detail" style="color:#8a9a8a;">All results are filtered to <span style="color:var(--text);">Ohio DTE vacant land class codes</span> and pass an <span style="color:var(--text);">improvement value test</span> on every parcel. Optionally filter further by <span style="color:var(--text);">Max Improvement Value</span> to allow a small tolerance.</div>
-        <div style="margin-top:5px;color:#8a9a8a;">For multi-parcel sales, <span style="color:var(--text);">all parcels</span> in the same deed (matched by date + price + owner) must pass — if any parcel carries building value, the entire sale is excluded.</div>
+        <div id="vacancy-detail" style="color:#8a9a8a;">All results are filtered to <span style="color:var(--text);">Ohio DTE vacant land class codes</span>. <span style="color:var(--text);">Max Improvement Value</span> sets the improvement value test applied to every parcel: <span style="color:var(--text);">= $0</span> is strictly vacant, a dollar amount allows a small tolerance, and <span style="color:var(--text);">Any</span> applies no improvement test.</div>
+        <div style="margin-top:5px;color:#8a9a8a;">When a limit is set, <span style="color:var(--text);">all parcels</span> in a multi-parcel sale (matched by date + price + owner) must pass — if any parcel exceeds the limit, the entire sale is excluded.</div>
         <div style="margin-top:5px;border-top:1px solid #1a2a1a;padding-top:5px;color:#5a6a5a;">🛰 <em>Imagery:</em> Button cycles Dark → OSIP Ohio (6-inch, public domain, © OGRIP/OIT) → Esri World Imagery. OSIP is Ohio-specific leaf-off orthoimagery; resolution and vintage vary by county.<br><br>⚠ <em>Razed-site detection</em> is heuristic. Signals: keyword match in legal/deed (strongest, +3), utilities on vacant parcel (+1/+2), sale price 20×+ assessed land (+1/+2), platted lot number (+1). Score ≥ 2 = flagged. Note: Ohio assesses at ~35% of market so normal vacant land already trades at 5-6× assessed — only extreme outliers (20×+) are scored. Both improvement tests reflect assessed values, not physical inspections. A recently demolished structure or assessment lag could cause either field to lag behind reality. Independent verification is recommended for individual comps.</div>
       </div>
     </div>
@@ -858,7 +860,7 @@ body.mobile-mode .sel-bar {
     <div id="map"></div>
     <button class="flood-btn"  id="flood-btn"  onclick="toggleFlood()">💧 FEMA Flood</button>
     <button class="aerial-btn" id="aerial-btn" onclick="cycleAerial()">🛰 Aerial</button>
-    <div class="source-badge" id="source-badge" style="position:relative">
+    <div class="source-badge" id="source-badge">
       <button class="overlay-hide-btn" onclick="hideOverlay('source-badge')" title="Hide">×</button>
       <span class="warn">⚠ No data loaded</span><br>
       Set filters and click <strong>Search Data</strong>
@@ -891,9 +893,7 @@ body.mobile-mode .sel-bar {
         <div class="reg-empty">Search data then open Regression Analysis</div>
       </div>
     </div>
-  </div>
-</div>
-</div>
+  </div><!-- end map-wrap -->
 
   <!-- SALES GRID PANE -->
   <div class="grid-resize-handle" id="grid-resize-handle" title="Drag to resize grid"></div>
@@ -934,6 +934,8 @@ body.mobile-mode .sel-bar {
   </div>
 
   </div><!-- end right-pane -->
+</div><!-- end main -->
+</div><!-- end app -->
 
 <div class="toast" id="toast"></div>
 
@@ -1322,24 +1324,49 @@ async function queryFloodZone(lat, lng){
 }
 
 // Franklin County Recorder deed search URL
-// Per-county auditor property search URLs and deep-link functions
-// deepLink(parcel): returns a URL that goes directly to (or as close as possible to) the parcel record
+// Per-county auditor deep links — open the parcel's record page directly.
+// Each returns { url, direct }. direct=false means the parcel ID didn't match the
+// expected format, so we fall back to the search page (and copy the PIN for pasting).
+// URL formats verified Sep 2026 against live parcels from each county's GIS.
+const _pinChars = p => String(p||'').replace(/[^0-9A-Za-z]/g,'');
 const AUDITOR_DEEP_LINKS = {
-  // Franklin: search page — PIN is copied to clipboard, user pastes in box
-  franklin:  (p) => `https://property.franklincountyauditor.com/_web/search/commonsearch.aspx?mode=parid`,
-  // Cuyahoga: MyPlace home — no parcel deep link available (POST-only form)
-  cuyahoga:  (p) => `https://myplace.cuyahogacounty.gov/`,
-  // Delaware: GIS auditor — no GET deep link, open search page
-  delaware:  (p) => `https://auditor.delco-gis.org/`,
-  // Medina: SearchResults?searchTerm= returns exactly 1 result — best available deep link
-  medina:    (p) => `https://auditor.medinacounty.gov/SearchResults?searchTerm=${encodeURIComponent(p)}`,
+  // Franklin (iasWorld): pin = 11-digit parcel without dashes. GIS PARCELID omits
+  // the trailing "-00" (e.g. 234-000088 → 23400008800).
+  franklin: (p) => {
+    let pin = _pinChars(p);
+    if(/^\d{9}$/.test(pin)) pin += '00';
+    if(!/^\d{11}$/.test(pin)) return { url:'https://property.franklincountyauditor.com/_web/search/commonsearch.aspx?mode=parid', direct:false };
+    return { url:`https://property.franklincountyauditor.com/_web/Datalets/Datalet.aspx?mode=&UseSearch=no&jur=025&pin=${pin}`, direct:true };
+  },
+  // Cuyahoga (MyPlace): path is the Base64-encoded parcel; city=99 (entire county),
+  // searchBy=Parcel, dataRequested=General Information — all Base64 too.
+  cuyahoga: (p) => {
+    const pin = _pinChars(p);
+    if(!/^\d{8}$/.test(pin)) return { url:'https://myplace.cuyahogacounty.gov/', direct:false };
+    return { url:`https://myplace.cuyahogacounty.gov/${btoa(pin)}?city=OTk%3D&searchBy=UGFyY2Vs&dataRequested=R2VuZXJhbCBJbmZvcm1hdGlvbg%3D%3D`, direct:true };
+  },
+  // Delaware (Manatron): 14-digit parcel, also passed dashed 3-3-2-3-3
+  // (e.g. 10010001012001 → 100-100-01-012-001).
+  delaware: (p) => {
+    const pin = _pinChars(p);
+    if(!/^\d{14}$/.test(pin)) return { url:'https://delaware-auditor-ohio.manatron.com/PropNum.aspx', direct:false };
+    const dashed = [pin.slice(0,3), pin.slice(3,6), pin.slice(6,8), pin.slice(8,11), pin.slice(11)].join('-');
+    return { url:`https://delaware-auditor-ohio.manatron.com/Property.aspx?mpropertynumber=${dashed}&p=${pin}`, direct:true };
+  },
+  // Medina: Parcel page takes the dashed 3-3-2-3 form (e.g. 00102A01004 → 001-02A-01-004).
+  medina: (p) => {
+    const pin = _pinChars(p).toUpperCase();
+    if(pin.length !== 11) return { url:`https://auditor.medinacounty.gov/SearchResults?searchTerm=${encodeURIComponent(String(p||''))}`, direct:false };
+    const dashed = [pin.slice(0,3), pin.slice(3,6), pin.slice(6,8), pin.slice(8)].join('-');
+    return { url:`https://auditor.medinacounty.gov/Parcel?Parcel=${encodeURIComponent(dashed)}`, direct:true };
+  },
 };
 
 // Labels for each county's auditor button — explains what will happen
 const AUDITOR_BUTTON_LABELS = {
-  franklin:  '🔗 Open Auditor (copy PIN)',
-  cuyahoga:  '🔗 Open Auditor',
-  delaware:  '🔗 Open Auditor',
+  franklin:  '🔗 Open Auditor (direct)',
+  cuyahoga:  '🔗 Open Auditor (direct)',
+  delaware:  '🔗 Open Auditor (direct)',
   medina:    '🔗 Open Auditor (direct)',
 };
 
@@ -1483,6 +1510,7 @@ var activeClasses = new Set();
 var isFetching = false;
 
 // ── HELPERS ───────────────────────────────────────────────────────────────────
+function roundAcres(n){ n = Number(n); return isFinite(n) ? Math.round(n*10000)/10000 : 0; }
 function fmt(n){ return n>=1e6?"$"+(n/1e6).toFixed(2)+"M":n>=1e3?"$"+(n/1e3).toFixed(0)+"K":"$"+Math.round(n); }
 function fmtFull(n){ return "$"+Math.round(n).toLocaleString(); }
 function fmtDate(ts){ if(!ts) return "—"; const d=new Date(ts); const m=String(d.getUTCMonth()+1).padStart(2,'0'); const day=String(d.getUTCDate()).padStart(2,'0'); const y=d.getUTCFullYear(); return `${m}/${day}/${y}`; }
@@ -1581,7 +1609,7 @@ async function runQuery(){
   const _classRaw = document.getElementById('q-class').value || 'VACANT';
   const _classAllowed = ['VACANT','ALL','100','110','300','400','500','501','502','503','504','505'];
   const classVal = _classAllowed.includes(_classRaw) ? _classRaw : 'VACANT';
-  const limit    = parseInt(document.getElementById('q-limit').value);
+  const limit    = parseInt(document.getElementById('q-limit').value) || 1000;
 
   // Build WHERE clause
   const cc   = countyConf();
@@ -1609,7 +1637,7 @@ async function runQuery(){
 
   try {
     const results = await paginatedQuery(where, limit);
-    processResults(results, dateFrom, dateTo);
+    processResults(results, dateFrom, dateTo, impvMaxRaw);
   } catch(e){
     let msg = e.message || String(e);
     if(msg.includes('400') || msg.toLowerCase().includes('invalid query') || msg.toLowerCase().includes('unable to perform')){
@@ -1731,7 +1759,9 @@ async function paginatedQuery(where, maxRecords){
   return allFeatures;
 }
 
-function processResults(features, dateFrom, dateTo){
+function processResults(features, dateFrom, dateTo, impvMaxRaw){
+  // Improvement limit chosen for this search: -1 = Any (no test), 0 = strictly vacant, N = allow up to $N
+  const impvLimit = (() => { const v = parseFloat(impvMaxRaw); return isNaN(v) ? -1 : v; })();
   allSales = features
     .map(f => {
       // Support both geojson (.properties) and json (.attributes) formats
@@ -1739,13 +1769,21 @@ function processResults(features, dateFrom, dateTo){
       const geom = f.geometry;
       let lat, lng;
 
+      // Average of the outer ring's vertices (same approach for every geometry flavor)
+      const ringCenter = ring => [ring.reduce((s,c)=>s+c[0],0)/ring.length, ring.reduce((s,c)=>s+c[1],0)/ring.length];
       if(geom && geom.type === 'Point'){
         [lng, lat] = geom.coordinates;
-      } else if(geom && geom.type === 'Polygon'){
-        // Use centroid of first ring
-        const ring = geom.coordinates[0];
-        lat = ring.reduce((s,c)=>s+c[1],0)/ring.length;
-        lng = ring.reduce((s,c)=>s+c[0],0)/ring.length;
+      } else if(geom && geom.type === 'Polygon' && geom.coordinates?.[0]?.length){
+        [lng, lat] = ringCenter(geom.coordinates[0]);
+      } else if(geom && geom.type === 'MultiPolygon' && geom.coordinates?.[0]?.[0]?.length){
+        // Parcels made of several pieces — previously dropped entirely
+        [lng, lat] = ringCenter(geom.coordinates[0][0]);
+      } else if(geom && typeof geom.x === 'number' && typeof geom.y === 'number'){
+        // Esri JSON point (f=json responses)
+        lng = geom.x; lat = geom.y;
+      } else if(geom && Array.isArray(geom.rings) && geom.rings[0]?.length){
+        // Esri JSON polygon (f=json responses)
+        [lng, lat] = ringCenter(geom.rings[0]);
       } else {
         // Fall back to X_COORD/Y_COORD (Ohio SP South → approx WGS84 via offset)
         // These are in feet, Ohio SP South. Skip if no geometry.
@@ -1770,7 +1808,7 @@ function processResults(features, dateFrom, dateTo){
         zip:       p.ZIPCD || p.ZIP || '',
         sale_date: f2.saleDate ? p[f2.saleDate]  : null,
         sale_price: f2.salePrice ? (p[f2.salePrice] || 0) : 0,
-        acres:     f2.acres    ? ((p[f2.acres] || 0) * (cc.acresFactor || 1)) : 0,
+        acres:     f2.acres    ? roundAcres((p[f2.acres] || 0) * (cc.acresFactor || 1)) : 0,
         class_cd:  f2.classcd  ? String(p[f2.classcd]  || '') : '',
         class_desc:f2.classdesc? (p[f2.classdesc]|| '') : '',
         use_cd:    (p.USECD || p.use_cd || ''),
@@ -1796,15 +1834,16 @@ function processResults(features, dateFrom, dateTo){
     .filter(s => s.sale_price > 0);
 
   // Multi-parcel scrub: a single sale transaction can span multiple parcels.
-  // Group by sale_date + sale_price + owner — if ANY parcel in a group has
-  // bld_value > 0, exclude ALL parcels from that transaction.
-  // Single parcels with bld_value > 0 are also excluded.
+  // Group by sale_date + sale_price + owner — if ANY parcel in a group exceeds
+  // the selected Max Improvement Value, exclude ALL parcels from that transaction.
+  // "Any (no limit)" skips this test entirely.
   const txnKey = s => `${s.sale_date}|${s.sale_price}|${s.owner}`;
   const dirtyTxns = new Set();
   const txnCounts = {};
   allSales.forEach(s => {
-    // Fail if EITHER improvement test shows buildings
-    if(s.bld_value > 0 || s.impv_value > 0) dirtyTxns.add(txnKey(s));
+    s.impv_limit = impvLimit;
+    // Fail if EITHER improvement measure exceeds the limit
+    if(impvLimit >= 0 && (s.bld_value > impvLimit || s.impv_value > impvLimit)) dirtyTxns.add(txnKey(s));
     const k = txnKey(s);
     txnCounts[k] = (txnCounts[k] || 0) + 1;
   });
@@ -1861,7 +1900,7 @@ function processResults(features, dateFrom, dateTo){
   const removedCount = beforeCount - allSales.length;
 
   setProgress(100, `Done — ${allSales.length.toLocaleString()} sales loaded`);
-  if(removedCount > 0) toast(`⚠ Removed ${removedCount} parcel(s) from ${dirtyTxns.size} multi-parcel sale(s) with buildings`, true);
+  if(removedCount > 0) toast(`⚠ Removed ${removedCount} parcel(s) from ${dirtyTxns.size} sale(s) over the improvement limit`, true);
 
   buildClassFilters();
   render();
@@ -1953,13 +1992,20 @@ async function fetchParcelDetail(parcelId){
   }
 }
 
+// Short description of the improvement test applied to a sale's search
+function impvTestLabel(s){
+  if(s.impv_limit == null || s.impv_limit < 0) return 'no improvement test applied';
+  if(s.impv_limit === 0) return 'all parcels $0 improvement value';
+  return 'all parcels ≤ ' + fmtFull(s.impv_limit) + ' improvement value';
+}
+
 function buildQuickPopup(s, color){
   // Shown immediately while API loads
   const ppa = s.acres>0 ? fmtFull(s.sale_price/s.acres)+'/ac' : '—';
   return `
     <div id="pu-${s.parcel.replace(/[^a-z0-9]/gi,'_')}" style="min-width:260px">
-      <div class="pu-addr">${s.address||s.parcel}</div>
-      ${s.txn_parcel_count > 1 ? `<div style="background:#2a1f00;border:1px solid var(--accent);border-radius:2px;padding:3px 7px;margin-bottom:6px;font-family:'IBM Plex Mono',monospace;font-size:.6rem;color:var(--accent)">⚠ Multi-parcel sale · ${s.txn_parcel_count} parcels · dual improvement test passed</div>` : ''}
+      <div class="pu-addr">${esc(s.address||s.parcel)}</div>
+      ${s.txn_parcel_count > 1 ? `<div style="background:#2a1f00;border:1px solid var(--accent);border-radius:2px;padding:3px 7px;margin-bottom:6px;font-family:'IBM Plex Mono',monospace;font-size:.6rem;color:var(--accent)">⚠ Multi-parcel sale · ${s.txn_parcel_count} parcels · ${impvTestLabel(s)}</div>` : ''}
       ${s.razed_flag ? `<div style="background:#1a0a1a;border:1px solid #e84ab0;border-radius:2px;padding:3px 7px;margin-bottom:6px;font-family:'IBM Plex Mono',monospace;font-size:.6rem;color:#e84ab0">🔥 Possible razed/redeveloped site (${s.razed_score} signals)</div>` : ''}
       <div class="pu-grid">
         <div class="pu-field"><label>Sale Price</label><span style="color:${color}">${fmtFull(s.sale_price)}</span></div>
@@ -1984,7 +2030,7 @@ function buildFullPopup(s, color, d, flood){
   const cf = _cc.fields;
   const acresFactor = _cc.acresFactor || 1;
   const acresRaw = cf.acres ? d[cf.acres] : null;
-  const acres   = (acresRaw != null ? acresRaw * acresFactor : null) || s.acres || 0;
+  const acres   = (acresRaw != null ? roundAcres(acresRaw * acresFactor) : null) || s.acres || 0;
   const sqft    = acres>0 ? Math.round(acres*43560).toLocaleString()+' SF' : '—';
   const ppa     = acres>0 ? fmtFull(s.sale_price/acres)+'/ac' : '—';
   const ppsf    = acres>0 ? '$'+(s.sale_price/(acres*43560)).toFixed(2)+'/SF' : '—';
@@ -2013,7 +2059,7 @@ function buildFullPopup(s, color, d, flood){
     <div style="min-width:300px;max-width:330px">
       <div class="pu-addr">${esc((cf.address ? d[cf.address] : null)||s.address||s.parcel)}</div>
 
-      ${s.txn_parcel_count > 1 ? `<div style="background:#2a1f00;border:1px solid var(--accent);border-radius:2px;padding:4px 8px;margin-bottom:8px;font-family:'IBM Plex Mono',monospace;font-size:.6rem;color:var(--accent);line-height:1.5">⚠ Multi-parcel sale (${s.txn_parcel_count} parcels)<br><span style="color:var(--accent2)">✓ All parcels: BLDVALUE=0 &amp; TOTVALUE=LNDVALUE</span></div>` : ''}
+      ${s.txn_parcel_count > 1 ? `<div style="background:#2a1f00;border:1px solid var(--accent);border-radius:2px;padding:4px 8px;margin-bottom:8px;font-family:'IBM Plex Mono',monospace;font-size:.6rem;color:var(--accent);line-height:1.5">⚠ Multi-parcel sale (${s.txn_parcel_count} parcels)<br><span style="color:${s.impv_limit >= 0 ? 'var(--accent2)' : 'var(--muted)'}">${s.impv_limit >= 0 ? '✓ ' : ''}${impvTestLabel(s)}</span></div>` : ''}
       ${s.razed_flag ? `<div style="background:#1a0a1a;border:1px solid #e84ab0;border-radius:2px;padding:4px 8px;margin-bottom:8px;font-family:'IBM Plex Mono',monospace;font-size:.6rem;color:#e84ab0;line-height:1.6">🔥 Possible razed/redeveloped site<br>${s.razed_reasons.map(r=>'· '+r).join('<br>')}</div>` : ''}
       ${section('Sale Info')}
       <div class="pu-grid">
@@ -2032,7 +2078,7 @@ function buildFullPopup(s, color, d, flood){
         ${row('Recorder Data', `<a href="${recorderUrl(s.owner, s.sale_date)}" target="_blank" style="color:var(--accent2);text-decoration:underline">Recorder Data</a>`)}
         ${row('Mail Address', mailAddr.slice(0,30)||'—')}
         ${row('Neighborhood', nbhd)}
-        ${row('Use / Class', useDesc.slice(0,26))}
+        ${row('Use / Class', esc(String(useDesc).slice(0,26)))}
         ${row('Class Code', (cf.classcd ? d[cf.classcd] : null)||s.class_cd||'—')}
         ${row('Tax District', district)}
         ${row('School Dist.', school)}
@@ -2058,7 +2104,7 @@ function buildFullPopup(s, color, d, flood){
 
       ${legal ? `
       ${section('Legal Description')}
-      <div style="font-family:'IBM Plex Mono',monospace;font-size:.62rem;color:var(--muted);line-height:1.5;padding:4px 0">${legal}</div>` : ''}
+      <div style="font-family:'IBM Plex Mono',monospace;font-size:.62rem;color:var(--muted);line-height:1.5;padding:4px 0">${esc(legal)}</div>` : ''}
 
       <div style="display:flex;gap:6px;margin-top:10px;padding-top:8px;border-top:1px solid #1f2736">
         <button onclick="auditorOpen(sanitizeParcel('${s.parcel}'))" style="flex:1;padding:6px 4px;background:var(--accent);color:#0c0e12;border:none;border-radius:2px;cursor:pointer;font-family:'IBM Plex Mono',monospace;font-size:.62rem;font-weight:700;letter-spacing:.04em">
@@ -2168,7 +2214,7 @@ function updateList(filtered){
         <span class="result-price" style="color:${color}">${fmtFull(s.sale_price)}</span>
         <span class="result-date">${fmtDate(s.sale_date)}</span>
       </div>
-      <div class="result-sub">${s.acres||0} ac · ${(s.class_desc||s.class_cd||'').slice(0,25)} · ${(s.district||'').slice(0,20)}</div>
+      <div class="result-sub">${s.acres||0} ac · ${esc((s.class_desc||s.class_cd||'').slice(0,25))} · ${esc((s.district||'').slice(0,20))}</div>
       <div class="result-sub"><a href="${recorderUrl(s.owner, s.sale_date)}" target="_blank" onclick="event.stopPropagation()" style="color:var(--accent2);text-decoration:none;font-size:.56rem">Recorder Data</a></div>
     `;
     el.addEventListener('click',()=>{
@@ -2197,7 +2243,7 @@ function clearData(){
   document.getElementById('s-avg').textContent = '—';
   document.getElementById('s-ppa').textContent = '—';
   document.getElementById('freshness-tag').textContent = 'No data loaded';
-  document.getElementById('source-badge').innerHTML = '<span class="warn">⚠ No data loaded</span><br>Set filters and click <strong>Search Data</strong>';
+  document.getElementById('source-badge').innerHTML = '<button class="overlay-hide-btn" onclick="hideOverlay(\'source-badge\')" title="Hide">×</button><span class="warn">⚠ No data loaded</span><br>Set filters and click <strong>Search Data</strong>';
   document.getElementById('reg-btn').disabled = true;
   document.getElementById('hdr-gen-btn').disabled = true;
   document.getElementById('sel-mode-btn').disabled = true;
@@ -2207,6 +2253,11 @@ function clearData(){
   clearSelection();
   regOpen = false;
   document.getElementById('reg-drawer').classList.remove('open');
+  activeClasses = new Set();
+  renderGrid();
+  const gc = document.getElementById('grid-count');
+  if(gc) gc.textContent = 'Run query to populate grid';
+  mobOnRender();
 }
 
 
@@ -2269,31 +2320,49 @@ function invertMatrix(M){
   return aug.map(row=>row.slice(n));
 }
 
-// t-distribution p-value approximation (two-tailed)
-function tPval(t, df){
-  t = Math.abs(t);
-  const x = df/(df+t*t);
-  // Regularized incomplete beta approximation
-  let bt = 0;
-  if(x>0 && x<1){
-    const a=df/2, b=0.5;
-    bt = Math.exp(a*Math.log(x)+b*Math.log(1-x)) / (x*(a+b));
-    // continued fraction
-    let f=1,c=1,d=1-((a+b)*x)/(a+1);
-    if(Math.abs(d)<1e-30) d=1e-30; d=1/d;
-    f=d;
-    for(let m=1;m<=50;m++){
-      let aa=m*(b-m)*x/((a+2*m-1)*(a+2*m));
-      d=1+aa*d; if(Math.abs(d)<1e-30)d=1e-30; c=1+aa/c; if(Math.abs(c)<1e-30)c=1e-30;
-      d=1/d; f*=d*c;
-      aa=-(a+m)*(a+b+m)*x/((a+2*m)*(a+2*m+1));
-      d=1+aa*d; if(Math.abs(d)<1e-30)d=1e-30; c=1+aa/c; if(Math.abs(c)<1e-30)c=1e-30;
-      d=1/d; const del=d*c; f*=del;
-      if(Math.abs(del-1)<1e-8) break;
-    }
-    bt = bt*f/a;
+// t-distribution p-value (two-tailed): p = I_x(df/2, 1/2), x = df/(df+t²)
+// Regularized incomplete beta via continued fraction (Numerical Recipes betai/betacf)
+function lnGamma(z){
+  const c=[0.99999999999980993,676.5203681218851,-1259.1392167224028,771.32342877765313,
+           -176.61502916214059,12.507343278686905,-0.13857109526572012,9.9843695780195716e-6,1.5056327351493116e-7];
+  if(z<0.5) return Math.log(Math.PI/Math.sin(Math.PI*z)) - lnGamma(1-z);
+  z -= 1;
+  let x = c[0];
+  for(let i=1;i<9;i++) x += c[i]/(z+i);
+  const t = z + 7.5;
+  return 0.5*Math.log(2*Math.PI) + (z+0.5)*Math.log(t) - t + Math.log(x);
+}
+function betacf(a, b, x){
+  const FPMIN = 1e-300;
+  const qab=a+b, qap=a+1, qam=a-1;
+  let c=1, d=1-qab*x/qap;
+  if(Math.abs(d)<FPMIN) d=FPMIN;
+  d=1/d; let h=d;
+  for(let m=1;m<=300;m++){
+    const m2=2*m;
+    let aa=m*(b-m)*x/((qam+m2)*(a+m2));
+    d=1+aa*d; if(Math.abs(d)<FPMIN) d=FPMIN;
+    c=1+aa/c; if(Math.abs(c)<FPMIN) c=FPMIN;
+    d=1/d; h*=d*c;
+    aa=-(a+m)*(qab+m)*x/((a+m2)*(qap+m2));
+    d=1+aa*d; if(Math.abs(d)<FPMIN) d=FPMIN;
+    c=1+aa/c; if(Math.abs(c)<FPMIN) c=FPMIN;
+    d=1/d; const del=d*c; h*=del;
+    if(Math.abs(del-1)<3e-14) break;
   }
-  return Math.min(1, Math.max(0, bt));
+  return h;
+}
+function betai(a, b, x){
+  if(x<=0) return 0;
+  if(x>=1) return 1;
+  const bt = Math.exp(lnGamma(a+b)-lnGamma(a)-lnGamma(b)+a*Math.log(x)+b*Math.log(1-x));
+  return x < (a+1)/(a+b+2) ? bt*betacf(a,b,x)/a : 1 - bt*betacf(b,a,1-x)/b;
+}
+function tPval(t, df){
+  if(!(df>0)) return 1;
+  if(!isFinite(t)) return isNaN(t) ? 1 : 0;
+  const x = df/(df+t*t);
+  return Math.min(1, Math.max(0, betai(df/2, 0.5, x)));
 }
 
 function sigStars(p){
@@ -2361,7 +2430,14 @@ function runRegression(){
   // Time trend: annualised change
   const yearFrac  = dateRange / (1000*60*60*24*365);
   const trendCoef = beta[3]; // per unit of 0–1 range
-  const annualPct = yearFrac>0 ? ((Math.exp(trendCoef/yearFrac)-1)*100) : 0;
+  const meanRaw   = raw_y.reduce((s,v)=>s+v,0)/n;
+  let annualPct = 0;
+  if(yearFrac > 1/365){                       // need at least ~a day of date spread
+    annualPct = useLog==='log'
+      ? (Math.exp(trendCoef/yearFrac)-1)*100  // log model: coefficient is a log change
+      : (meanRaw ? (trendCoef/yearFrac)/meanRaw*100 : 0); // linear: $ per year as % of mean
+  }
+  if(!isFinite(annualPct)) annualPct = 0;
 
   // Build HTML
   const depLabel = depVar==='price_per_acre' ? (useLog==='log'?'Ln(Price/Acre)':'Price/Acre') : (useLog==='log'?'Ln(Sale Price)':'Sale Price');
@@ -2444,7 +2520,7 @@ function runRegression(){
       </div>
       <div class="reg-stat-box">
         <div class="rsv">${fmtFull(medPPA)}</div>
-        <div class="rsl">Median $/Acre</div>
+        <div class="rsl">${depVar==='total_price'?'Median Price':'Median $/Acre'}</div>
       </div>
       <div class="reg-stat-box">
         <div class="rsv" style="color:${annualPct>=0?'var(--accent2)':'var(--danger)'}">${annualPct>=0?'+':''}${annualPct.toFixed(1)}%</div>
@@ -2770,18 +2846,18 @@ function sgToggleComp(parcelId, checkbox){
   if(idx > -1){
     // Deselect
     selectedComps.splice(idx, 1);
-    checkbox.checked = false;
+    if(checkbox) checkbox.checked = false;
   } else {
     if(selectedComps.length >= 5){
       toast('Maximum 5 comps — remove one first', true);
-      checkbox.checked = false;
+      if(checkbox) checkbox.checked = false;
       return;
     }
     selectedComps.push(s);
-    checkbox.checked = true;
+    if(checkbox) checkbox.checked = true;
   }
   // Sync selection UI and row highlights (lightweight — no full grid rebuild)
-  updateSelBar();
+  updateSelUI();
   refreshGridSelState();
 }
 
@@ -2793,16 +2869,15 @@ function sanitizeParcel(p){ return String(p||'').replace(/[^a-zA-Z0-9\-.]/g,'');
 
 function auditorOpen(parcel){
   const deepLinkFn = AUDITOR_DEEP_LINKS[activeCounty] || AUDITOR_DEEP_LINKS.franklin;
-  const url = deepLinkFn(parcel);
-  // For counties with no real deep link, copy PIN to clipboard so user can paste
-  const needsCopy = activeCounty === 'franklin' || activeCounty === 'cuyahoga' || activeCounty === 'delaware';
-  if(needsCopy){
+  const { url, direct } = deepLinkFn(parcel);
+  if(direct){
+    toast(`Opening parcel ${parcel} on the auditor site…`);
+  } else {
+    // Unrecognized parcel format — open the search page and copy the PIN for pasting
     navigator.clipboard.writeText(parcel).catch(()=>{});
     toast(`Parcel ${parcel} copied — paste into the search box`);
-  } else {
-    toast(`Opening parcel ${parcel}…`);
   }
-  window.open(url, '_blank');
+  window.open(url, '_blank', 'noopener');
 }
 
 function auditorCopy(parcel, btn){
@@ -2907,7 +2982,7 @@ async function generateSalesSheet(){
     // Use county field mapping so non-Franklin counties populate correctly
     const _ccg   = countyConf();
     const cf     = _ccg.fields;
-    const acres = (cf.acres ? d[cf.acres] : null) || s.acres || 0;
+    const acres = (cf.acres && d[cf.acres] != null ? roundAcres(d[cf.acres] * (_ccg.acresFactor || 1)) : null) || s.acres || 0;
     const sqft      = acres > 0 ? (acres * 43560).toFixed(0) : '';
     const ppa_gross = acres > 0 ? (s.sale_price / acres).toFixed(2) : '';
     const ppsf_gross= acres > 0 ? (s.sale_price / (acres*43560)).toFixed(4) : '';
@@ -3173,7 +3248,7 @@ async function buildAndDownloadDocx(comps){
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+  setTimeout(() => URL.revokeObjectURL(url), 4000);
 }
 
 
@@ -3185,10 +3260,10 @@ const IS_MOBILE = ('ontouchstart' in window || navigator.maxTouchPoints > 0) && 
 if(IS_MOBILE){
   document.body.classList.add('mobile-mode');
 }
-// Always init mob panel if it exists (handles cases where touch detection misses)
-if(document.getElementById('mob-panel')){
-  mobInit();
-}
+// Mobile panel markup sits after this script, so init once the whole page has parsed
+document.addEventListener('DOMContentLoaded', () => {
+  if(document.getElementById('mob-panel')) mobInit();
+});
 
 // ── Mobile panel state ─────────────────────────────────────────────────────
 var _mobPane     = 'filters';
@@ -3385,7 +3460,7 @@ function mobRenderGrid(){
         <input type="checkbox" class="sg-check" ${isSelected?'checked':''}
           onclick="event.stopPropagation();sgToggleComp(sanitizeParcel('${s.parcel}'),this)">
       </td>
-      <td>${s.razed_flag?'🔥 ':''}${(s.address||s.parcel).slice(0,22)}</td>
+      <td>${s.razed_flag?'🔥 ':''}${esc((s.address||s.parcel).slice(0,22))}</td>
       <td class="td-muted">${fmtDate(s.sale_date)}</td>
       <td class="td-price">${fmtFull(s.sale_price)}</td>
       <td class="td-muted">${s.acres||'—'}</td>
@@ -3417,7 +3492,7 @@ function mobRenderComps(){
     const div = document.createElement('div');
     div.style.cssText = 'flex:1;min-width:120px;padding:8px 10px;border:1px solid '+(s?'var(--accent2)':'var(--border)')+';border-radius:4px;font-family:"IBM Plex Mono",monospace;font-size:.55rem;color:'+(s?'var(--text)':'var(--muted)')+';cursor:'+(s?'pointer':'default');
     div.innerHTML = s
-      ? `<div style="font-weight:700;color:var(--accent2)">Comp ${i+1}</div><div>${(s.address||s.parcel).slice(0,20)}</div><div style="color:var(--accent)">${fmtFull(s.sale_price)}</div><div style="color:var(--muted);font-size:.5rem">tap to remove</div>`
+      ? `<div style="font-weight:700;color:var(--accent2)">Comp ${i+1}</div><div>${esc((s.address||s.parcel).slice(0,20))}</div><div style="color:var(--accent)">${fmtFull(s.sale_price)}</div><div style="color:var(--muted);font-size:.5rem">tap to remove</div>`
       : `<div style="color:var(--border);font-size:1.2rem;text-align:center">${i+1}</div><div style="text-align:center;font-size:.5rem">empty</div>`;
     if(s) div.onclick = () => { sgToggleComp(sanitizeParcel(s.parcel), null); mobRenderComps(); };
     slots.appendChild(div);
@@ -3670,7 +3745,6 @@ document.getElementById('q-date-to').value =
           <option value="500">500</option>
           <option value="1000" selected>1,000</option>
           <option value="2000">2,000</option>
-          <option value="3000">3,000</option>
           <option value="5000">5,000</option>
         </select>
       </div>
