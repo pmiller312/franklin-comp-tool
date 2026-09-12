@@ -958,6 +958,25 @@ body.mobile-mode .sel-bar {
 // Each county defines its endpoint, field mapping, and filter logic.
 // "vacant" filter: WHERE clause fragment that identifies vacant land parcels.
 // Fields map to internal standard names used throughout the app.
+// Ohio DTE vacant-land class codes — labels for the county class dropdown.
+// Cuyahoga uses its own 4-digit land-use codes (5000/1100).
+const CLASS_LABELS = {
+  '100':'Agricultural vacant land',        '110':'Agricultural vacant (CAUV)',
+  '300':'Industrial vacant land',          '400':'Commercial vacant land',
+  '500':'Residential vacant lot (platted)','501':'Residential vacant 0–9.99 ac',
+  '502':'Residential vacant 10–19.99 ac',  '503':'Residential vacant 20–29.99 ac',
+  '504':'Residential vacant 30–39.99 ac',  '505':'Residential vacant 40+ ac',
+  '5000':'Residential vacant land',        '1100':'Vacant agricultural land (CAUV)',
+};
+// WHERE fragments for the class field. numeric=true where the service stores the
+// class as a number (Cuyahoga's TAX_LUC) rather than a string.
+function classClause(field, codes, numeric){
+  return ` AND ${field} IN (${codes.map(c => numeric ? String(parseInt(c,10)) : `'${c}'`).join(',')})`;
+}
+function oneClassClause(field, code, numeric){
+  return numeric ? ` AND ${field} = ${parseInt(code,10)}` : ` AND ${field} = '${code}'`;
+}
+
 const COUNTY_CONFIG = {
   franklin: {
     name:     'Franklin County',
@@ -989,10 +1008,10 @@ const COUNTY_CONFIG = {
     },
     // Which DTE class codes represent vacant land
     vacantClasses: ['100','110','300','400','500','501','502','503','504','505'],
-    vacantFilter: (classVal) => {
+    vacantFilter(classVal){
       if(classVal === 'ALL') return '';
-      if(classVal === 'VACANT') return " AND CLASSCD IN ('100','110','300','400','500','501','502','503','504','505')";
-      return ` AND CLASSCD = '${classVal}'`;
+      if(classVal === 'VACANT') return classClause(this.fields.classcd, this.vacantClasses, this.classIsNumeric);
+      return oneClassClause(this.fields.classcd, classVal, this.classIsNumeric);
     },
     // Improvement filter — dual test: no building value AND total = land only
     impvFilter: (impvMax) => {
@@ -1013,7 +1032,7 @@ const COUNTY_CONFIG = {
   cuyahoga: {
     name:     'Cuyahoga County',
     endpoint: 'https://services7.arcgis.com/GXM8JipKyc0m6HBi/arcgis/rest/services/CuyahogaSalesData/FeatureServer/0/query',
-    maxRec:   2000,
+    maxRec:   1000,     // page size for this service
     fields: {
       parcel:   'PARCEL_ID',
       address:  'PCL_ADDR_FULL',
@@ -1041,15 +1060,20 @@ const COUNTY_CONFIG = {
     // Cuyahoga LUC codes: 5000 = RES VACANT LAND, 1100 = VACANT AG LAND-CAUV
     // These are 4-digit codes unlike Franklin's 3-digit DTE codes
     vacantClasses: ['5000','1100'],
-    vacantFilter: (classVal) => {
+    classIsNumeric: true,          // TAX_LUC is a number, and the codes are 4-digit
+    bldIsCount:     true,          // RES_BLDG_COUNT is a building COUNT, not a dollar value
+    vacantFilter(classVal){
       if(classVal === 'ALL') return '';
-      if(classVal === 'VACANT') return " AND TAX_LUC IN (5000,1100) AND RES_BLDG_COUNT = 0";
-      // Specific class selection — map display value to actual LUC
-      const luc = parseInt(classVal);
-      return ` AND TAX_LUC = ${isNaN(luc) ? 5000 : luc} AND RES_BLDG_COUNT = 0`;
+      if(classVal === 'VACANT') return classClause(this.fields.classcd, this.vacantClasses, this.classIsNumeric);
+      return oneClassClause(this.fields.classcd, classVal, this.classIsNumeric);
     },
-    // Cuyahoga improvement filter — RES_BLDG_COUNT already applied in vacantFilter
-    impvFilter: (impvMax) => '',
+    // Cuyahoga publishes a building COUNT, not an improvement value, so a dollar
+    // tolerance can't be applied — any limit other than "Any" means "no buildings".
+    impvFilter: (impvMax) => {
+      const v = parseFloat(impvMax);
+      if(isNaN(v) || v < 0) return '';
+      return ' AND RES_BLDG_COUNT = 0';
+    },
     dateField:  'SALE_DATE',
     dateFormat: 'sql',       // FeatureServer stores ms internally but query uses DATE 'yyyy-mm-dd'
     queryFormat: 'json',      // FeatureServer — use json, read .attributes
@@ -1057,8 +1081,10 @@ const COUNTY_CONFIG = {
     acresFactor: 1/43560,  // PAR_LOT_SZE is in square feet — convert to acres
     coordSR:    4326,   // already WGS84 lat/lng in geometry
     coordConvert: false,
-    singlePage: true,
-    sourceUrl:  'services7.arcgis.com (Cuyahoga Open Data)',   // ArcGIS Online FeatureServer rejects resultOffset — fetch one page only
+    // resultOffset works on this FeatureServer (verified Sep 2026): paging it means
+    // long searches are no longer silently capped at the newest 2,000 sales.
+    singlePage: false,
+    sourceUrl:  'services7.arcgis.com (Cuyahoga Open Data)'
   },
 
   delaware: {
@@ -1089,11 +1115,13 @@ const COUNTY_CONFIG = {
       x:        null,
       y:        null,
     },
-    vacantClasses: ['100','101','102','120','300','400','500','501','502','503','504','505'],
-    vacantFilter: (classVal) => {
+    // 101/102/120 are working-farm codes (improved) and were pulling houses and
+    // barns into "vacant land" — verified against live sales — so they are out.
+    vacantClasses: ['100','110','300','400','500','501','502','503','504','505'],
+    vacantFilter(classVal){
       if(classVal === 'ALL') return '';
-      if(classVal === 'VACANT') return " AND CLASS IN ('100','101','102','120','300','400','500','501','502','503','504','505')";
-      return ` AND CLASS = '${classVal}'`;
+      if(classVal === 'VACANT') return classClause(this.fields.classcd, this.vacantClasses, this.classIsNumeric);
+      return oneClassClause(this.fields.classcd, classVal, this.classIsNumeric);
     },
     impvFilter: (impvMax) => {
       const v = parseFloat(impvMax);
@@ -1138,12 +1166,13 @@ const COUNTY_CONFIG = {
       x:         null,
       y:         null,
     },
-    // Ohio DTE codes confirmed in Medina dataset (Market_Improve_Value=0 parcels)
-    vacantClasses: ['101','110','111','112','122','124','199','300','399','400','500','501','502','503','504','505','510','511','512','514'],
-    vacantFilter: (classVal) => {
+    // The old list included improved codes: 1,742 of 1,779 recent code-510 sales
+    // carried building value (up to $773,650). Only the DTE vacant codes remain.
+    vacantClasses: ['100','110','300','400','500','501','502','503','504','505'],
+    vacantFilter(classVal){
       if(classVal === 'ALL') return '';
-      if(classVal === 'VACANT') return " AND ClassCode IN ('101','110','111','112','122','124','199','300','399','400','500','501','502','503','504','505','510','511','512','514')";
-      return ` AND ClassCode = '${classVal}'`;
+      if(classVal === 'VACANT') return classClause(this.fields.classcd, this.vacantClasses, this.classIsNumeric);
+      return oneClassClause(this.fields.classcd, classVal, this.classIsNumeric);
     },
     impvFilter: (impvMax) => {
       const v = parseFloat(impvMax);
@@ -1160,6 +1189,26 @@ const COUNTY_CONFIG = {
     sourceUrl:    'services5.arcgis.com (Medina Auditor)',
   },
 };
+
+// Build the class dropdown options for a county from its own class codes
+function classOptionsFor(cc){
+  return [{ v:'VACANT', label:'All Vacant Land' }]
+    .concat(cc.vacantClasses.map(c => ({ v:c, label:`${c} — ${CLASS_LABELS[c] || 'Vacant land'}` })))
+    .concat([{ v:'ALL', label:'All Property Classes (unfiltered)' }]);
+}
+
+// Repopulate the desktop and mobile class selects for the active county,
+// keeping the current choice when that code exists in the new county.
+function rebuildClassSelects(){
+  const opts = classOptionsFor(countyConf());
+  ['q-class','mob-class'].forEach(id => {
+    const sel = document.getElementById(id);
+    if(!sel) return;
+    const want = sel.value || 'VACANT';
+    sel.innerHTML = opts.map(o => `<option value="${o.v}">${o.label}</option>`).join('');
+    sel.value = opts.some(o => o.v === want) ? want : 'VACANT';
+  });
+}
 
 // Active county — default Franklin, can be changed via county selector
 var activeCounty = 'franklin';
@@ -1317,9 +1366,8 @@ async function queryFloodZone(lat, lng){
       returnGeometry:'false',
       f:             'json'
     });
-    const r = await fetch(`https://hazards.fema.gov/arcgis/rest/services/public/NFHL/MapServer/identify?${params}`);
-    if(!r.ok) return null;
-    const data = await r.json();
+    const data = await fetchJson(`https://hazards.fema.gov/arcgis/rest/services/public/NFHL/MapServer/identify?${params}`,
+      { timeoutMs: 12000, label: 'FEMA flood lookup' });
     const hit  = data.results?.[0]?.attributes;
     if(!hit) return null;
     return {
@@ -1561,8 +1609,104 @@ function setProgress(pct, msg){
 
 // ── ARCGIS QUERY ──────────────────────────────────────────────────────────────
 
+// One controller + token per search. The controller cancels in-flight requests;
+// the token lets us ignore a response that arrives after the user moved on.
+var _queryCtl = null, _queryToken = 0, _lastQueryTruncated = false;
+
+function startQuery(){
+  if(_queryCtl) _queryCtl.abort();
+  _queryCtl = new AbortController();
+  return { signal: _queryCtl.signal, token: ++_queryToken };
+}
+function cancelQuery(){
+  if(_queryCtl){ _queryCtl.abort(); _queryCtl = null; }
+  _queryToken++;          // any response still coming is now ignored
+  resetSearchUI();
+}
+
+// Put the search controls back to their resting state
+function resetSearchUI(){
+  isFetching = false;
+  const btn = document.getElementById('btn-fetch');
+  if(btn){ btn.disabled = false; btn.textContent = 'Search Data'; btn.title = ''; }
+  const mob = document.getElementById('mob-btn-fetch');
+  if(mob){ mob.disabled = false; mob.textContent = 'Search Data'; }
+  const wrap = document.getElementById('progress-wrap');
+  if(wrap) wrap.style.display = 'none';
+}
+function isCancelled(err){ return !!(err && err.cancelled); }
+
+// fetch + JSON + ArcGIS error payload, with a real timeout. Never hangs forever.
+async function fetchJson(url, { signal, timeoutMs = 25000, label = 'The county service' } = {}){
+  const ctl = new AbortController();
+  const relay = () => ctl.abort();
+  if(signal){
+    if(signal.aborted) ctl.abort();
+    else signal.addEventListener('abort', relay, { once: true });
+  }
+  let timedOut = false;
+  const timer = setTimeout(() => { timedOut = true; ctl.abort(); }, timeoutMs);
+  try {
+    const resp = await fetch(url, { signal: ctl.signal });
+    if(!resp.ok){
+      const err = new Error(`${label} returned HTTP ${resp.status}`);
+      err.status = resp.status;
+      throw err;
+    }
+    let data;
+    try { data = await resp.json(); }
+    catch(parseErr){ throw new Error(`${label} sent a response that isn't data (it may be down or showing an error page)`); }
+    if(data && data.error){
+      const err = new Error(data.error.message || JSON.stringify(data.error));
+      err.arcgisCode = data.error.code;
+      throw err;
+    }
+    return data;
+  } catch(e){
+    if(e && e.name === 'AbortError'){
+      if(timedOut){
+        const err = new Error(`${label} didn't respond within ${Math.round(timeoutMs/1000)}s`);
+        err.timeout = true;
+        throw err;
+      }
+      const err = new Error('cancelled');
+      err.cancelled = true;
+      throw err;
+    }
+    throw e;
+  } finally {
+    clearTimeout(timer);
+    if(signal) signal.removeEventListener('abort', relay);
+  }
+}
+
+// Retries only things that can plausibly succeed on a second try.
+function isTransient(err){
+  if(!err || err.cancelled) return false;
+  if(err.timeout) return true;
+  if(err.status === 429 || err.status === 503 || err.status === 504) return true;
+  return /failed to fetch|networkerror|network error/i.test(err.message || '');
+}
+async function fetchJsonWithRetry(url, opts, attempts = 3){
+  let lastErr, timeouts = 0;
+  for(let i = 0; i < attempts; i++){
+    try { return await fetchJson(url, opts); }
+    catch(e){
+      lastErr = e;
+      if(e.timeout && ++timeouts > 1) throw e;   // don't sit through timeout after timeout
+      if(!isTransient(e) || i === attempts - 1) throw e;
+      setProgress(30, `Retrying… (attempt ${i + 2} of ${attempts})`);
+      await new Promise(r => setTimeout(r, 1200 * (i + 1)));
+    }
+  }
+  throw lastErr;
+}
+
 async function runQuery(){
-  if(isFetching) return;
+  if(isFetching){          // a second click stops the search instead of doing nothing
+    cancelQuery();
+    return;
+  }
 
   // ── Input validation ────────────────────────────────────────────────────
   try {
@@ -1586,6 +1730,8 @@ async function runQuery(){
 
     if(errors.length){
       if(typeof toast === 'function') toast('⚠ ' + errors.join(' · '), true);
+      const _mb = document.getElementById('mob-btn-fetch');
+      if(_mb){ _mb.disabled = false; _mb.textContent = 'Search Data'; }
       if(typeof IS_MOBILE !== 'undefined' && IS_MOBILE && typeof mobShowPane === 'function') mobShowPane('filters');
       return;
     }
@@ -1597,9 +1743,12 @@ async function runQuery(){
 
   isFetching = true;
 
-  const btn = document.getElementById('btn-fetch');
-  btn.disabled = true;
-  btn.textContent = '⏳ Searching…';
+  const { signal, token } = startQuery();
+  const btn    = document.getElementById('btn-fetch');
+  const mobBtn = document.getElementById('mob-btn-fetch');
+  btn.textContent = '⏳ Searching… (click to stop)';
+  btn.title = 'Click to stop this search';
+  if(mobBtn){ mobBtn.textContent = '⏳ Searching… (tap to stop)'; }
 
   document.getElementById('progress-wrap').style.display = 'block';
   setProgress(5, 'Building query…');
@@ -1618,15 +1767,17 @@ async function runQuery(){
   const priceMin = parseInt(document.getElementById('q-price-min').value) || 1000;
   const acresMin = parseFloat(document.getElementById('q-acres-min').value) || 0;
   const acresMax = parseFloat(document.getElementById('q-acres-max').value) || 0;
-  // Whitelist classVal to prevent injection — only allow known DTE codes
+  // Whitelist classVal to prevent injection — only codes this county actually uses
   const _classRaw = document.getElementById('q-class').value || 'VACANT';
-  const _classAllowed = ['VACANT','ALL','100','110','300','400','500','501','502','503','504','505'];
+  const _classAllowed = ['VACANT','ALL'].concat(countyConf().vacantClasses);
   const classVal = _classAllowed.includes(_classRaw) ? _classRaw : 'VACANT';
   const limit    = parseInt(document.getElementById('q-limit').value) || 1000;
 
-  // Build WHERE clause
-  const cc   = countyConf();
-  const flds = cc.fields;
+  // Build WHERE clause — capture the county now so a mid-search switch can't
+  // decode this response with a different county's field names
+  const cc        = countyConf();
+  const countyKey = activeCounty;
+  const flds      = cc.fields;
   // Date filter syntax varies by county:
   // Franklin (MapServer) uses SQL DATE 'yyyy-mm-dd' syntax
   // Cuyahoga (FeatureServer/ArcGIS Online) uses Unix timestamp ms
@@ -1638,8 +1789,11 @@ async function runQuery(){
   } else {
     where = `${flds.saleDate} >= DATE '${dateFrom}' AND ${flds.saleDate} <= DATE '${dateTo}' AND ${flds.salePrice} >= ${priceMin}`;
   }
-  if(acresMin > 0) where += ` AND ${flds.acres} >= ${acresMin}`;
-  if(acresMax > 0) where += ` AND ${flds.acres} <= ${acresMax}`;
+  // Acreage bounds must be expressed in whatever unit the county stores.
+  // Cuyahoga's PAR_LOT_SZE is square feet, so 0.5 acres is 21,780 there.
+  const acresToUnits = cc.acresFactor ? (1 / cc.acresFactor) : 1;
+  if(acresMin > 0) where += ` AND ${flds.acres} >= ${acresMin * acresToUnits}`;
+  if(acresMax > 0) where += ` AND ${flds.acres} <= ${acresMax * acresToUnits}`;
 
   // Vacant land class filter — county-specific
   where += cc.vacantFilter(classVal);
@@ -1649,132 +1803,89 @@ async function runQuery(){
   where += cc.impvFilter(impvMaxRaw);
 
   try {
-    const results = await paginatedQuery(where, limit);
-    processResults(results, dateFrom, dateTo, impvMaxRaw);
+    const results = await paginatedQuery(where, limit, cc, signal);
+    if(token !== _queryToken) return;        // user switched county or started over
+    processResults(results, dateFrom, dateTo, impvMaxRaw, cc, countyKey);
   } catch(e){
-    let msg = e.message || String(e);
-    if(msg.includes('400') || msg.toLowerCase().includes('invalid query') || msg.toLowerCase().includes('unable to perform')){
-      msg = `${cc.name} service temporarily unavailable — please try again in a moment.`;
-    } else if(msg.includes('Failed to fetch') || msg.includes('NetworkError')){
-      msg = 'Network error — check your connection and try again.';
+    if(isCancelled(e)){
+      toast('Search stopped');
+    } else {
+      let msg = e.message || String(e);
+      if(/failed to fetch|networkerror/i.test(msg)){
+        msg = `Couldn't reach ${cc.name} — check your connection and try again.`;
+      }
+      // Anything else (bad field, malformed query, service error) is reported as
+      // the service itself described it, rather than as a "try again later".
+      toast('⚠ ' + msg, true);
+      console.error(e);
     }
-    toast('⚠ ' + msg, true);
-    console.error(e);
   } finally {
-    isFetching = false;
-    btn.disabled = false;
-    btn.textContent = 'Search Data';
-    document.getElementById('progress-wrap').style.display = 'none';
+    if(token === _queryToken) resetSearchUI();   // a newer search owns the UI otherwise
   }
 }
 
-async function paginatedQuery(where, maxRecords){
-  const PAGE = 1000; // API max per request
+async function paginatedQuery(where, maxRecords, cc, signal){
+  const PAGE = Math.min(1000, cc.maxRec || 1000);
+  const qFmt = cc.queryFormat || 'geojson';
+  const outFields = getFields();
   let allFeatures = [];
   let offset = 0;
-  let totalFetched = 0;
+  _lastQueryTruncated = false;
 
-  const cc = countyConf();
-  const qFmt = cc.queryFormat || 'geojson';
+  while(allFeatures.length < maxRecords){
+    const count = Math.min(PAGE, maxRecords - allFeatures.length);
+    const page  = Math.floor(offset / PAGE) + 1;
 
-  if(cc.singlePage){
-    // ArcGIS Online FeatureServers (e.g. Cuyahoga) reject resultOffset — single page only.
-    // Retry up to 3 times with backoff to handle intermittent throttling.
-    const MAX_RETRIES = 3;
-    let lastErr = null;
-    for(let attempt = 0; attempt < MAX_RETRIES; attempt++){
-      if(attempt > 0){
-        setProgress(10 + attempt*15, `Retrying… (attempt ${attempt+1}/${MAX_RETRIES})`);
-        await new Promise(r => setTimeout(r, 1500 * attempt)); // 0s, 1.5s, 3s
-      } else {
-        setProgress(30, `Searching…`);
-      }
-      // Try geojson first, fall back to json on second attempt
-      const fmt = attempt === 1 ? 'json' : 'geojson';
-      const params = new URLSearchParams({
-        where,
-        outFields: getFields(),
-        returnGeometry: 'true',
-        outSR: '4326',
-        f: fmt,
-        resultRecordCount: Math.min(maxRecords, cc.maxRec || 2000),
-        orderByFields: `${cc.fields.saleDate} DESC`,
-      });
-      const url = `${cc.endpoint}?${params}`;
-      try {
-        const resp = await fetch(url);
-        if(!resp.ok){ lastErr = new Error(`HTTP ${resp.status}`); continue; }
-        const data = await resp.json();
-        if(data.error){
-          // Code 400 from ArcGIS Online is often transient throttling — retry
-          lastErr = new Error(data.error.message || JSON.stringify(data.error));
-          if(data.error.code === 400 && attempt < MAX_RETRIES - 1) continue;
-          throw lastErr;
-        }
-        allFeatures = data.features || [];
-        lastErr = null;
-        break; // success
-      } catch(e){
-        if(e === lastErr) throw e; // re-throw non-recoverable errors immediately
-        lastErr = e;
-      }
-    }
-    if(lastErr) throw lastErr;
+    setProgress(
+      Math.min(90, 5 + (allFeatures.length / maxRecords) * 85),
+      `Searching <span class="progress-count">${allFeatures.length.toLocaleString()}</span> of ${maxRecords.toLocaleString()}…`
+    );
 
-  } else {
-    // Standard offset pagination (Franklin County MapServer)
-    while(true){
-      const remaining = maxRecords - allFeatures.length;
-      if(remaining <= 0) break;
-      const count = Math.min(PAGE, remaining);
+    const params = new URLSearchParams({
+      where,
+      outFields,
+      returnGeometry: 'true',
+      outSR: '4326',
+      f: qFmt,
+      resultOffset: offset,
+      resultRecordCount: count,
+      orderByFields: `${cc.fields.saleDate} DESC`,
+    });
+    const data = await fetchJsonWithRetry(`${cc.endpoint}?${params}`, {
+      signal, label: `${cc.name}${page > 1 ? ' (page ' + page + ')' : ''}`
+    });
 
-      setProgress(
-        Math.min(90, 5 + (allFeatures.length/maxRecords)*85),
-        `Searching <span class="progress-count">${allFeatures.length.toLocaleString()}</span> of ${maxRecords.toLocaleString()}…`
-      );
+    const features = data.features || [];
+    allFeatures = allFeatures.concat(features);
 
-      const params = new URLSearchParams({
-        where,
-        outFields: getFields(),
-        returnGeometry: 'true',
-        outSR: '4326',
-        f: qFmt,
-        resultOffset: offset,
-        resultRecordCount: count,
-        orderByFields: `${cc.fields.saleDate} DESC`,
-      });
-      const url = `${cc.endpoint}?${params}`;
-      let resp;
-      try {
-        resp = await fetch(url);
-      } catch(netErr) {
-        throw new Error(`Network error on page ${Math.floor(offset/count)+1}: ${netErr.message}`);
-      }
-      if(!resp.ok) throw new Error(`HTTP ${resp.status} on page ${Math.floor(offset/count)+1} — ${cc.name} service may be temporarily unavailable`);
-
-      let data;
-      try {
-        data = await resp.json();
-      } catch(parseErr) {
-        throw new Error(`Invalid response from ${cc.name} on page ${Math.floor(offset/count)+1}`);
-      }
-      if(data.error) throw new Error(data.error.message || JSON.stringify(data.error));
-
-      const features = data.features || [];
-      allFeatures = allFeatures.concat(features);
-
-      if(features.length < count) break;
-      offset += count;
-    }
+    // Short page means we reached the end of the matching records
+    if(features.length < count) return allFeatures;
+    offset += features.length;
   }
 
-  setProgress(95, `Processing <span class="progress-count">${allFeatures.length.toLocaleString()}</span> records…`);
+  // Stopped at the user's Max Records — there may well be more sales than this
+  _lastQueryTruncated = true;
   return allFeatures;
 }
 
-function processResults(features, dateFrom, dateTo, impvMaxRaw){
+// True when a parcel fails the chosen Max Improvement Value test.
+// limit < 0 ("Any") applies no test. Counties that publish a building COUNT
+// can only answer "are there buildings", so any limit means "none on record".
+function overImprovementLimit(s, limit){
+  if(!(limit >= 0)) return false;
+  if(s.bld_count != null) return s.bld_count > 0;
+  const measures = [s.bld_value, s.impv_value].filter(v => v != null);
+  if(!measures.length) return false;          // county publishes nothing to test
+  return measures.some(v => v > limit);
+}
+
+function processResults(features, dateFrom, dateTo, impvMaxRaw, queryCc, queryCounty){
   // Improvement limit chosen for this search: -1 = Any (no test), 0 = strictly vacant, N = allow up to $N
   const impvLimit = (() => { const v = parseFloat(impvMaxRaw); return isNaN(v) ? -1 : v; })();
+  const cc = queryCc || countyConf();
+  const countyKey = queryCounty || activeCounty;
+  // Why records don't make it to the map, so the count can be shown rather than hidden
+  const dropped = { noLocation: 0, outsideOhio: 0, noPrice: 0, overImprovement: 0 };
   allSales = features
     .map(f => {
       // Support both geojson (.properties) and json (.attributes) formats
@@ -1798,22 +1909,23 @@ function processResults(features, dateFrom, dateTo, impvMaxRaw){
         // Esri JSON polygon (f=json responses)
         [lng, lat] = ringCenter(geom.rings[0]);
       } else {
-        // Fall back to X_COORD/Y_COORD (Ohio SP South → approx WGS84 via offset)
-        // These are in feet, Ohio SP South. Skip if no geometry.
+        dropped.noLocation++;      // nothing to map this parcel with
         return null;
       }
 
       // Sanity check coords — Ohio state bounds
-      if(lat < 38.3 || lat > 42.3 || lng < -85.0 || lng > -80.4) return null;
+      if(lat < 38.3 || lat > 42.3 || lng < -85.0 || lng > -80.4){ dropped.outsideOhio++; return null; }
 
-      const cc = countyConf();
       const f2 = cc.fields;
-      const bldRaw  = f2.bldVal ? (p[f2.bldVal] || 0) : 0;
+      const bldRaw  = f2.bldVal ? Number(p[f2.bldVal] || 0) : 0;
       const totVal  = f2.totVal ? (p[f2.totVal] || 0) : 0;
       const lndVal  = f2.lndVal ? (p[f2.lndVal] || 0) : 0;
-      // For Cuyahoga bldVal is a count — treat >0 count as has improvement
-      const bldVal  = f2.bldVal === 'RES_BLDG_COUNT' ? bldRaw : bldRaw;
-      const impvVal = totVal > 0 && lndVal > 0 ? Math.max(0, totVal - lndVal) : (bldVal > 0 ? 1 : 0);
+      // Cuyahoga's field is a building COUNT, not a dollar value — never mix the two.
+      const bldCount = cc.bldIsCount ? bldRaw : null;
+      const bldVal   = cc.bldIsCount ? null   : bldRaw;
+      // Improvement value = total − land where both are published; otherwise unknown (null).
+      const impvVal = (totVal > 0 && lndVal > 0) ? Math.max(0, totVal - lndVal)
+                    : (bldVal != null ? bldVal : null);
       const addr    = f2.address ? (p[f2.address] || '') : '';
       return {
         parcel:    f2.parcel   ? (p[f2.parcel]   || '') : '',
@@ -1837,14 +1949,15 @@ function processResults(features, dateFrom, dateTo, impvMaxRaw){
         sewer:     f2.sewer    ? (p[f2.sewer]    || 'N') : 'N',
         mkt_value: totVal,
         lnd_value: lndVal,
-        bld_value: bldVal,
-        impv_value: impvVal,
-        county:    activeCounty,
+        bld_value: bldVal,        // dollars, or null where the county publishes a count
+        bld_count: bldCount,      // building count, or null where the county publishes values
+        impv_value: impvVal,      // dollars, or null when it can't be computed
+        county:    countyKey,
         lat, lng,
       };
     })
     .filter(Boolean)
-    .filter(s => s.sale_price > 0);
+    .filter(s => { if(s.sale_price > 0) return true; dropped.noPrice++; return false; });
 
   // Multi-parcel scrub: a single sale transaction can span multiple parcels.
   // Group by sale_date + sale_price + owner — if ANY parcel in a group exceeds
@@ -1855,8 +1968,7 @@ function processResults(features, dateFrom, dateTo, impvMaxRaw){
   const txnCounts = {};
   allSales.forEach(s => {
     s.impv_limit = impvLimit;
-    // Fail if EITHER improvement measure exceeds the limit
-    if(impvLimit >= 0 && (s.bld_value > impvLimit || s.impv_value > impvLimit)) dirtyTxns.add(txnKey(s));
+    if(overImprovementLimit(s, impvLimit)) dirtyTxns.add(txnKey(s));
     const k = txnKey(s);
     txnCounts[k] = (txnCounts[k] || 0) + 1;
   });
@@ -1910,25 +2022,46 @@ function processResults(features, dateFrom, dateTo, impvMaxRaw){
 
   const beforeCount = allSales.length;
   allSales = allSales.filter(s => !dirtyTxns.has(txnKey(s)));
-  const removedCount = beforeCount - allSales.length;
+  dropped.overImprovement = beforeCount - allSales.length;
 
   setProgress(100, `Done — ${allSales.length.toLocaleString()} sales loaded`);
-  if(removedCount > 0) toast(`⚠ Removed ${removedCount} parcel(s) from ${dirtyTxns.size} sale(s) over the improvement limit`, true);
 
   buildClassFilters();
   render();
   updateFreshnessTag(dateFrom, dateTo);
 
-  const cc2 = countyConf();
+  // Everything the user should know about this result set, in one place that stays
+  // on screen — toasts overwrite each other and disappear.
+  const notes = [];
+  if(_lastQueryTruncated)
+    notes.push(`<span class="warn">⚠ Stopped at the Max Records limit — there may be more sales in this range.</span>`);
+  if(dropped.overImprovement > 0)
+    notes.push(`${dropped.overImprovement.toLocaleString()} parcel(s) in ${dirtyTxns.size} sale(s) removed by the improvement test`);
+  if(dropped.noLocation > 0)
+    notes.push(`${dropped.noLocation.toLocaleString()} record(s) had no mappable location`);
+  if(dropped.outsideOhio > 0)
+    notes.push(`${dropped.outsideOhio.toLocaleString()} record(s) had coordinates outside Ohio`);
+  if(dropped.noPrice > 0)
+    notes.push(`${dropped.noPrice.toLocaleString()} record(s) had no sale price`);
+
+  const hasSales = allSales.length > 0;
   document.getElementById('source-badge').innerHTML =
     `<button class="overlay-hide-btn" onclick="hideOverlay('source-badge')" title="Hide">×</button>` +
-    `<span class="live">● ${cc2.name} Auditor</span><br>` +
-    `${allSales.length.toLocaleString()} vacant land sales · ${isoToMDY(dateFrom)} → ${isoToMDY(dateTo)}`;
+    (hasSales
+      ? `<span class="live">● ${cc.name} Auditor</span><br>` +
+        `${allSales.length.toLocaleString()} of ${features.length.toLocaleString()} records mapped · ${isoToMDY(dateFrom)} → ${isoToMDY(dateTo)}`
+      : `<span class="warn">⚠ No sales matched</span><br>${cc.name} · ${isoToMDY(dateFrom)} → ${isoToMDY(dateTo)}`) +
+    (notes.length ? `<br><span style="color:var(--muted);font-size:.54rem;line-height:1.5">${notes.join('<br>')}</span>` : '');
 
-  toast(`✓ Loaded ${allSales.length.toLocaleString()} real sales`);
-  document.getElementById('reg-btn').disabled = false;
-  document.getElementById('hdr-gen-btn').disabled = false;
-  document.getElementById('sel-mode-btn').disabled = false;
+  if(hasSales){
+    toast(`✓ Loaded ${allSales.length.toLocaleString()} sales` + (notes.length ? ' — see the note on the map' : ''));
+  } else {
+    toast('No sales matched — try a wider date range, a lower minimum price, or a different class', true);
+  }
+
+  document.getElementById('reg-btn').disabled = !hasSales;
+  document.getElementById('hdr-gen-btn').disabled = true;   // needs comps, not just results
+  document.getElementById('sel-mode-btn').disabled = !hasSales;
 }
 
 // ── FILTERS ───────────────────────────────────────────────────────────────────
@@ -1993,10 +2126,8 @@ async function fetchParcelDetail(parcelId){
       returnGeometry: 'false',
       f: 'json',
     });
-    const r = await fetch(`${cc.endpoint}?${params}`);
-    if(!r.ok) return null;
-    const data = await r.json();
-    if(data.error || !data.features?.length) return null;
+    const data = await fetchJson(`${cc.endpoint}?${params}`, { timeoutMs: 15000, label: `${cc.name} parcel lookup` });
+    if(!data.features?.length) return null;
     // Support both json (.attributes) and geojson (.properties) responses
     return data.features[0].attributes || data.features[0].properties || null;
   } catch(e){
@@ -2005,9 +2136,20 @@ async function fetchParcelDetail(parcelId){
   }
 }
 
+// How to show a parcel's improvement figure: dollars, a building count, or unknown
+function impvDisplay(s){
+  if(s.bld_count != null) return s.bld_count > 0 ? `${s.bld_count} bldg` : 'None';
+  if(s.impv_value == null) return 'n/a';
+  return s.impv_value > 0 ? fmtFull(s.impv_value) : '$0';
+}
+function impvIsFlagged(s){
+  return (s.bld_count != null && s.bld_count > 0) || (s.impv_value != null && s.impv_value > 0);
+}
+
 // Short description of the improvement test applied to a sale's search
 function impvTestLabel(s){
   if(s.impv_limit == null || s.impv_limit < 0) return 'no improvement test applied';
+  if(s.bld_count != null) return 'no buildings on record';
   if(s.impv_limit === 0) return 'all parcels $0 improvement value';
   return 'all parcels ≤ ' + fmtFull(s.impv_limit) + ' improvement value';
 }
@@ -2048,10 +2190,12 @@ function buildFullPopup(s, color, d, flood){
   const ppa     = acres>0 ? fmtFull(s.sale_price/acres)+'/ac' : '—';
   const ppsf    = acres>0 ? '$'+(s.sale_price/(acres*43560)).toFixed(2)+'/SF' : '—';
   const owner   = (cf.owner ? (d[cf.owner] || '') : '') || s.owner || '—';
-  const mktVal  = (cf.totVal  && d[cf.totVal]  > 0) ? fmtFull(d[cf.totVal])  : '—';
-  const lndVal  = (cf.lndVal  && d[cf.lndVal]  > 0) ? fmtFull(d[cf.lndVal])  : '—';
+  const mktRaw  = (cf.totVal && d[cf.totVal] > 0) ? d[cf.totVal] : s.mkt_value;
+  const lndRaw  = (cf.lndVal && d[cf.lndVal] > 0) ? d[cf.lndVal] : s.lnd_value;
+  const mktVal  = mktRaw > 0 ? fmtFull(mktRaw) : '—';
+  const lndVal  = lndRaw > 0 ? fmtFull(lndRaw) : '—';
   const taxAmt  = '—';   // tax amount not available in all county APIs
-  const legal   = cf.legal ? [d[cf.legal], cf.legal2 ? d[cf.legal2] : null].filter(Boolean).join(' ') : '';
+  const legal   = (cf.legal ? [d[cf.legal], cf.legal2 ? d[cf.legal2] : null].filter(Boolean).join(' ') : '') || s.legal || '';
   const waterV  = cf.water ? (d[cf.water] || 'N') : (s.water || 'N');
   const sewerV  = cf.sewer ? (d[cf.sewer] || 'N') : (s.sewer || 'N');
   const utils   = [waterV==='Y'?'Water':'', sewerV==='Y'?'Sewer':''].filter(Boolean).join(', ') || '—';
@@ -2099,6 +2243,7 @@ function buildFullPopup(s, color, d, flood){
 
       ${section('Assessed Values & Tax')}
       <div class="pu-grid">
+        ${row('Improvements', esc(impvDisplay(s)))}
         ${row('Market Value', mktVal)}
         ${row('Land Value', lndVal)}
         ${row('Annual Tax', taxAmt)}
@@ -2107,7 +2252,11 @@ function buildFullPopup(s, color, d, flood){
 
       ${section('Site Characteristics')}
       <div class="pu-grid">
-        ${flood ? row('FEMA Flood Zone', '<span style="color:'+(flood.sfha?'#e84a4a':'#4ae8b0')+'">'+floodZoneLabel(flood.zone)+'</span>') : row('Flood Zone (Auditor)', '<span style="color:'+(floodOk?'#4ae8b0':'#e84a4a')+'">'+(floodOk?'✓ No':'⚠ Yes')+'</span>')}
+        ${flood
+            ? row('FEMA Flood Zone', '<span style="color:'+(flood.sfha?'#e84a4a':'#4ae8b0')+'">'+floodZoneLabel(flood.zone)+'</span>')
+            : (cf.flood
+                ? row('Flood Zone (Auditor)', '<span style="color:'+(floodOk?'#4ae8b0':'#e84a4a')+'">'+(floodOk?'✓ No':'⚠ Yes')+'</span>')
+                : row('Flood Zone', '<span style="color:var(--muted)">Not verified</span>'))}
         ${flood && flood.bfe ? row('Base Flood Elevation', flood.bfe) : ''}
         ${flood && flood.sfha ? row('Special Flood Hazard Area', '<span style="color:#e84a4a">⚠ Yes — insurance may be required</span>') : ''}
         ${row('Utilities', utils)}
@@ -2138,9 +2287,7 @@ function getFiltered(){
   const floodMode  = document.getElementById('q-flood')?.value || 'all';
   return allSales.filter(s => {
     if(!activeClasses.has(s.class_desc||s.class_cd||'Unknown')) return false;
-    if(impvMax === -1) {}                                       // no limit
-    else if(impvMax === 0 && s.impv_value !== 0) return false; // strictly zero
-    else if(impvMax > 0 && s.impv_value > impvMax) return false;
+    if(overImprovementLimit(s, impvMax)) return false;
     if(razedMode === 'only'    && !s.razed_flag) return false;
     if(razedMode === 'exclude' &&  s.razed_flag) return false;
     if(floodMode === 'none'  &&  s.flood === 'Y') return false;
@@ -2247,6 +2394,7 @@ function updateFreshnessTag(from, to){
 }
 
 function clearData(){
+  cancelQuery();          // stop any search still in flight and reset its controls
   allSales = [];
   markerLayer.clearLayers();
   document.getElementById('filter-bar').innerHTML = '<span style="font-family:\'IBM Plex Mono\',monospace;font-size:.58rem;color:var(--muted)">Run query to see filters</span>';
@@ -2813,7 +2961,7 @@ function renderGrid(){
     if(s.razed_flag) tr.classList.add('sg-flagged');
 
     const ppa = s.acres > 0 ? '$' + Math.round(s.sale_price / s.acres).toLocaleString() : '—';
-    const impv = s.impv_value > 0 ? '$' + s.impv_value.toLocaleString() : '$0';
+    const impv = impvDisplay(s);
     const dateStr = fmtDate(s.sale_date);
     const cls = (s.class_desc || s.class_cd || '').slice(0, 22);
     const dist = (s.district || '').slice(0, 18);
@@ -2831,7 +2979,7 @@ function renderGrid(){
       <td>${ppa}</td>
       <td class="td-muted">${cls}</td>
       <td class="td-muted">${dist}</td>
-      <td class="${s.impv_value > 0 ? 'td-razed' : 'td-muted'}">${impv}</td>
+      <td class="${impvIsFlagged(s) ? 'td-razed' : 'td-muted'}">${impv}</td>
       <td style="text-align:center">${s.razed_score > 0 ? s.razed_score : ''}</td>
       <td style="padding:4px 8px;"><a href="${recorderUrl(s.owner, s.sale_date)}" target="_blank" onclick="event.stopPropagation()" style="color:var(--accent2);text-decoration:none;font-size:.58rem;white-space:nowrap">Recorder Data</a></td>
     `;
@@ -2972,17 +3120,23 @@ function updateSelUI(){
 }
 
 // ── DOCX SALES SHEET GENERATION ───────────────────────────────────────────────
+var isGenerating = false;
+
 async function generateSalesSheet(){
+  if(isGenerating){ toast('Still building the last sheet…'); return; }
   if(selectedComps.length === 0){ toast("Select at least 1 comp using ☑ Select Comps first", true); return; }
-  // Update all generate buttons (sel-bar + header)
+  isGenerating = true;
+  // Update every generate button (selection bar + header + mobile Comps pane)
   const allGenBtns = [
     document.getElementById('btn-generate'),
-    document.getElementById('hdr-gen-btn')
+    document.getElementById('hdr-gen-btn'),
+    document.getElementById('mob-gen-btn')
   ].filter(Boolean);
   allGenBtns.forEach(b => { b.disabled = true; b.textContent = '⏳ Building…'; });
   toast('Loading detail for ' + selectedComps.length + ' comp(s)…');
 
   // Fetch full GIS detail for each selected comp
+  try {
   const [detailsArr, floodsArr] = await Promise.all([
     Promise.all(selectedComps.map(s => fetchParcelDetail(s.parcel).catch(() => ({})))),
     Promise.all(selectedComps.map(s => queryFloodZone(s.lat, s.lng)))
@@ -3009,7 +3163,7 @@ async function generateSalesSheet(){
     const addrVal   = cf.address ? (d[cf.address] || s.address || '') : (s.address || '');
     const distVal   = cf.district ? (d[cf.district] || s.district || '') : (s.district || '');
     const schoolVal = cf.school   ? (d[cf.school]   || s.school  || '') : (s.school  || '');
-    const legalVal  = cf.legal    ? [d[cf.legal], cf.legal2 ? d[cf.legal2] : null].filter(Boolean).join(' ') : '';
+    const legalVal  = (cf.legal ? [d[cf.legal], cf.legal2 ? d[cf.legal2] : null].filter(Boolean).join(' ') : '') || s.legal || '';
     const classdVal = cf.classdesc ? (d[cf.classdesc] || s.class_desc || '') : (s.class_desc || s.class_cd || '');
 
     return {
@@ -3020,8 +3174,10 @@ async function generateSalesSheet(){
       state:      'Ohio',
       school:     schoolVal,
       legal:      legalVal,
-      grantor:    ownerVal,
-      grantee:    '',   // GIS only has current owner; grantee = owner on most recent deed
+      // The Auditor's "owner" is whoever took title on the most recent deed —
+      // that is the GRANTEE. The grantor is not in the GIS data, so it stays blank.
+      grantor:    '',
+      grantee:    ownerVal,
       sale_date:  fmtDate(s.sale_date),
       financing:  '',
       sale_price: fmtFull(s.sale_price),
@@ -3039,7 +3195,10 @@ async function generateSalesSheet(){
       instr_type: '',
       highest_best: '',
       present_use: classdVal,
-      improvements: s.impv_value > 0 ? fmtFull(s.impv_value) : 'None',
+      improvements: s.bld_count != null
+                      ? (s.bld_count > 0 ? s.bld_count + ' building(s) on record' : 'None (no buildings on record)')
+                      : (s.impv_value == null ? 'Not available'
+                        : (s.impv_value > 0 ? fmtFull(s.impv_value) : 'None')),
       size_gross: acres > 0 ? acres + ' ac / ' + Number(sqft).toLocaleString() + ' SF' : '',
       size_net:   '',
       dimensions: '',
@@ -3047,7 +3206,11 @@ async function generateSalesSheet(){
       utilities:  utils,
       zoning:     s.use_cd || '',
       topography: '',
-      flood:      fz ? floodZoneLabel(fz.zone) + (fz.sfha ? ' (SFHA)' : '') : (floodVal === 'Y' ? 'Yes (Auditor)' : 'No (Auditor)'),
+      // Only Franklin publishes a flood field. With no county field and no FEMA
+      // answer, say so — do not print "No", which reads as a verified finding.
+      flood:      fz ? floodZoneLabel(fz.zone) + (fz.sfha ? ' (SFHA)' : '')
+                     : (cf.flood ? (floodVal === 'Y' ? 'Yes (Auditor)' : 'No (Auditor)')
+                                 : 'Not verified — no county flood data, FEMA lookup unavailable'),
       flood_zone: fz?.bfe ? 'BFE: ' + fz.bfe : '',
       ppa_gross:  ppa_gross ? '$' + Number(ppa_gross).toLocaleString(undefined,{minimumFractionDigits:2}) : '',
       ppa_net:    '',
@@ -3058,15 +3221,19 @@ async function generateSalesSheet(){
   });
 
   // Generate DOCX via docx-js inline (no server needed)
-  try {
-    await buildAndDownloadDocx(comps);
-    toast('✓ Sales sheet downloaded');
-  } catch(e) {
-    toast('Error generating DOCX: ' + e.message, true);
-    console.error(e);
-  }
+  await buildAndDownloadDocx(comps);
+  toast('✓ Sales sheet downloaded');
 
-  allGenBtns.forEach(b => { b.disabled = selectedComps.length === 0; b.textContent = '⬇ Generate Sales Sheet'; });
+  } catch(e) {
+    // Any failure — lookups, the DOCX library, the build itself — lands here, so
+    // the buttons never stay stuck on "Building…"
+    toast('Could not build the sales sheet: ' + (e.message || e), true);
+    console.error(e);
+  } finally {
+    isGenerating = false;
+    allGenBtns.forEach(b => { b.disabled = selectedComps.length === 0; b.textContent = '⬇ Generate Sales Sheet'; });
+    if(typeof mobRenderComps === 'function') mobRenderComps();
+  }
 }
 
 async function buildAndDownloadDocx(comps){
@@ -3299,6 +3466,8 @@ function mobInit(){
   const deskLimit = document.getElementById('q-limit')?.value;
   if(deskClass) document.getElementById('mob-class').value = deskClass;
   if(deskLimit) document.getElementById('mob-max-records').value = deskLimit;
+
+  rebuildClassSelects();   // mobile select exists only now, after the page parsed
 
   // Wire drag handle
   const handle = document.getElementById('mob-drag-handle');
@@ -3624,6 +3793,7 @@ function switchCounty(key){
   GIS_BASE = COUNTY_CONFIG[key].endpoint;
 
   _fieldsCache = null;   // reset field list cache for new county
+  rebuildClassSelects(); // class codes differ by county
 
   // Update header logo
   const logo = document.getElementById('hdr-logo');
@@ -3653,6 +3823,9 @@ function switchCounty(key){
 // ── INIT ──────────────────────────────────────────────────────────────────────
 // Open on Esri World Imagery (aerial) with street labels
 setAerialMode(2);
+
+// Populate the class dropdown from the active county's codes
+rebuildClassSelects();
 
 // Set default "to" date to today
 const _t = new Date();
