@@ -121,8 +121,11 @@ body.mobile-mode .query-panel .btn-clear { display: none; }
 .source-badge{position:absolute;top:10px;left:10px;z-index:1000;background:var(--panel);border:1px solid var(--border);padding:5px 10px;border-radius:3px;font-family:'IBM Plex Mono',monospace;font-size:.58rem;color:var(--muted);max-width:260px;line-height:1.5;}
 .source-badge .live{color:var(--green);font-weight:700;}
 .source-badge .warn{color:var(--orange);}
+.map-btns{
+  position:absolute;top:10px;right:52px;z-index:1000;   /* right:52px clears the zoom control */
+  display:flex;gap:6px;align-items:flex-start;
+}
 .aerial-btn{
-  position:absolute;top:10px;right:52px;z-index:1000;
   background:var(--panel);border:1px solid var(--border);
   color:var(--muted);font-family:'IBM Plex Mono',monospace;font-size:.62rem;
   padding:5px 10px;border-radius:3px;cursor:pointer;letter-spacing:.06em;
@@ -131,7 +134,6 @@ body.mobile-mode .query-panel .btn-clear { display: none; }
 .aerial-btn:hover{border-color:var(--accent);color:var(--accent);}
 .aerial-btn.active{background:var(--accent);color:#0c0e12;border-color:var(--accent);font-weight:700;}
 .flood-btn{
-  position:absolute;top:10px;right:148px;z-index:1000;
   background:var(--panel);border:1px solid var(--border);
   color:var(--muted);font-family:'IBM Plex Mono',monospace;font-size:.62rem;
   padding:5px 10px;border-radius:3px;cursor:pointer;letter-spacing:.06em;
@@ -275,9 +277,12 @@ body.mobile-mode .mob-tab{ padding:9px 4px 8px; }
 .pu-footer a{color:var(--accent2);text-decoration:none;}
 
 /* Toast */
-/* Top centre: the bottom is where the comp bar and the mobile drawer live */
-.toast{position:fixed;top:64px;left:50%;transform:translateX(-50%);max-width:min(92vw,520px);text-align:center;background:var(--panel);border:1px solid var(--border);color:var(--text);padding:9px 18px;border-radius:4px;font-family:'IBM Plex Mono',monospace;font-size:.68rem;z-index:9999;opacity:0;transition:opacity .3s;pointer-events:none;box-shadow:0 6px 24px rgba(0,0,0,.5);}
-body.mobile-mode .toast{top:56px;}
+/* Top-right of the map, under the layer buttons: clear of the data badge, the
+   legend, the comp bar and the grid rows */
+.toast{position:fixed;top:100px;right:20px;max-width:min(70vw,420px);text-align:right;background:var(--panel);border:1px solid var(--border);color:var(--text);padding:9px 18px;border-radius:4px;font-family:'IBM Plex Mono',monospace;font-size:.68rem;z-index:9999;opacity:0;transition:opacity .3s;pointer-events:none;box-shadow:0 6px 24px rgba(0,0,0,.5);}
+/* On a phone the bottom belongs to the drawer and the comp bar, so the toast
+   goes to the top of the map strip, under the layer buttons */
+body.mobile-mode .toast{top:96px;right:12px;left:12px;max-width:none;text-align:center;}
 .toast.show{opacity:1;}
 .toast.err{border-color:var(--danger);color:var(--danger);}
 
@@ -395,8 +400,9 @@ body.mobile-mode .grid-resize-handle,
 body.mobile-mode .sidebar-toggle { display:none; }
 
 /* Map control buttons */
-body.mobile-mode .aerial-btn { top:8px; right:44px; font-size:.52rem; padding:3px 7px; }
-body.mobile-mode .flood-btn  { top:8px; right:130px; font-size:.52rem; padding:3px 7px; }
+body.mobile-mode .map-btns   { top:8px; right:44px; }
+body.mobile-mode .aerial-btn,
+body.mobile-mode .flood-btn  { font-size:.56rem; padding:4px 8px; }
 
 /* ── MOBILE PANEL (bottom drawer) ── */
 .mob-panel {
@@ -514,7 +520,9 @@ body.mobile-mode .mob-stats-strip .s-cell {
 body.mobile-mode .mob-stats-strip .s-cell:last-child { border-right: none; }
 
 /* Hide desktop elements we've duplicated in mobile panel */
-body.mobile-mode .source-badge { display: none; }
+body.mobile-mode .source-badge,
+body.mobile-mode .legend,
+body.mobile-mode .overlay-restore-bar { display: none; }
 
 /* Larger touch targets in results list */
 body.mobile-mode .result-item { padding: 12px 14px; }
@@ -554,9 +562,10 @@ body.mobile-mode .sel-bar .btn-generate{ flex:1 1 auto; }
 
 .sidebar-toggle {
   position: absolute;
-  top: 50%;
+  /* Near the top of the sidebar edge — at 50% it landed on the grid's first row
+     whenever the grid was tall */
+  top: 140px;
   left: 300px;
-  transform: translateY(-50%);
   z-index: 1500;
   width: 18px; height: 52px;
   background: var(--panel);
@@ -615,7 +624,7 @@ body.mobile-mode .sel-bar .btn-generate{ flex:1 1 auto; }
 .sidebar-resize-handle {
   position: absolute;
   top: 0; bottom: 0;
-  right: -4px;
+  right: 0;
   width: 8px;
   cursor: ew-resize;
   z-index: 1400;
@@ -624,7 +633,7 @@ body.mobile-mode .sel-bar .btn-generate{ flex:1 1 auto; }
 .sidebar-resize-handle.dragging::after {
   content: '';
   position: absolute;
-  left: 3px; top: 0; bottom: 0;
+  right: 0; top: 0; bottom: 0;
   width: 2px;
   background: var(--accent);
 }
@@ -898,8 +907,10 @@ body.mobile-mode .sel-bar .btn-generate{ flex:1 1 auto; }
   <!-- MAP -->
   <div class="map-wrap">
     <div id="map"></div>
-    <button class="flood-btn"  id="flood-btn"  onclick="toggleFlood()">💧 FEMA Flood</button>
-    <button class="aerial-btn" id="aerial-btn" onclick="cycleAerial()">🛰 Aerial</button>
+    <div class="map-btns">
+      <button class="flood-btn"  id="flood-btn"  onclick="toggleFlood()">💧 FEMA Flood</button>
+      <button class="aerial-btn" id="aerial-btn" onclick="cycleAerial()">🛰 Aerial</button>
+    </div>
     <div class="source-badge" id="source-badge">
       <button class="overlay-hide-btn" onclick="hideOverlay('source-badge')" title="Hide">×</button>
       <span class="warn">⏳ Loading sales…</span><br>
