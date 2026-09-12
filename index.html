@@ -345,6 +345,13 @@ body.mobile-mode .toast{top:56px;}
 .reg-chart-wrap{grid-column:span 2;height:180px;position:relative;}
 canvas#reg-canvas{width:100%;height:100%;}
 
+.reg-trim-note{
+  grid-column:span 2;background:#0a0c10;border:1px solid var(--border);border-left:2px solid var(--accent);
+  border-radius:3px;padding:8px 12px;font-family:'IBM Plex Mono',monospace;font-size:.62rem;
+  color:var(--muted);line-height:1.6;
+}
+.reg-trim-note strong{color:var(--text);}
+.reg-trim-note .warn{color:var(--orange);}
 .reg-empty{grid-column:span 2;text-align:center;padding:30px;color:var(--muted);font-family:'IBM Plex Mono',monospace;font-size:.7rem;}
 
 /* ══════════════════════════════════════════════════════
@@ -2559,11 +2566,14 @@ function ols(X, y){
   const SE    = inv.map((_,i)=>Math.sqrt(Math.max(0,inv[i][i]*MSE)));
   const tstat = beta.map((b,i)=>SE[i]>0?b/SE[i]:0);
   const Fstat = k>1 ? (SSR/(k-1))/MSE : 0;
-  return { beta, SE, tstat, R2, adjR2, MSE, SSE, SST, Fstat, yhat, resid, n, k };
+  return { beta, SE, tstat, R2, adjR2, MSE, SSE, SST, Fstat, yhat, resid, n, k, inv };
 }
 
 function invertMatrix(M){
   const n = M.length;
+  // NaN never trips the pivot check below, and a NaN inverse produces a model that
+  // looks finished but is meaningless
+  for(const row of M) for(const v of row) if(!Number.isFinite(v)) return null;
   const aug = M.map((row,i)=>[...row,...Array.from({length:n},(_,j)=>i===j?1:0)]);
   for(let col=0;col<n;col++){
     let maxR = col;
@@ -2625,6 +2635,76 @@ function tPval(t, df){
   return Math.min(1, Math.max(0, betai(df/2, 0.5, x)));
 }
 
+// Internally studentized residuals: e_i / (s·√(1−h_ii)). Scaling by leverage is
+// what makes "two standard errors out" mean the same thing for every observation.
+function studentizedResiduals(X, fit){
+  const s2 = fit.MSE;
+  return fit.resid.map((e, i) => {
+    const xi = X[i];
+    let h = 0;
+    for(let a = 0; a < xi.length; a++){
+      let rowSum = 0;
+      for(let b = 0; b < xi.length; b++) rowSum += fit.inv[a][b] * xi[b];
+      h += xi[a] * rowSum;
+    }
+    h = Math.min(0.999, Math.max(0, h));
+    const denom = Math.sqrt(s2 * (1 - h));
+    return denom > 0 ? e / denom : 0;
+  });
+}
+
+// Fit, optionally dropping outliers.
+//   mode 'none'           — fit everything
+//   mode '2' | '2.5' | '3' — drop sales more than that many standard errors off the
+//                            line, refitting until nothing else qualifies
+//   mode 'target'         — drop the worst-fitting sale, refit, repeat until R²
+//                            reaches the target or the trim cap is hit
+// Returns the trimmed fit, the untrimmed fit, and which rows were dropped.
+function fitWithTrim(X, y, mode, targetR2, maxTrimFrac){
+  const full = ols(X, y);
+  if(!full) return null;
+  const idx = X.map((_, i) => i);
+  if(mode === 'none') return { fit: full, full, keep: idx, dropped: [], hitTarget: null };
+
+  const maxDrop = Math.max(0, Math.min(Math.floor(X.length * (maxTrimFrac || 0.2)), X.length - X[0].length - 5));
+  let keep = idx.slice();
+  let fit = full;
+  const dropped = [];
+
+  const refit = () => ols(keep.map(i => X[i]), keep.map(i => y[i]));
+
+  if(mode === 'target'){
+    let guard = 0;
+    while(fit.R2 < targetR2 && dropped.length < maxDrop && guard++ < 5000){
+      const t = studentizedResiduals(keep.map(i => X[i]), fit);
+      let worst = 0;
+      for(let i = 1; i < t.length; i++) if(Math.abs(t[i]) > Math.abs(t[worst])) worst = i;
+      dropped.push({ row: keep[worst], t: t[worst] });
+      keep.splice(worst, 1);
+      const next = refit();
+      if(!next) break;
+      fit = next;
+    }
+    return { fit, full, keep, dropped, hitTarget: fit.R2 >= targetR2 };
+  }
+
+  // Threshold mode: drop everything past the cutoff, refit, repeat while it keeps finding more
+  const cutoff = parseFloat(mode) || 3;
+  for(let pass = 0; pass < 6; pass++){
+    const t = studentizedResiduals(keep.map(i => X[i]), fit);
+    const out = [];
+    t.forEach((v, i) => { if(Math.abs(v) > cutoff) out.push(i); });
+    if(!out.length) break;
+    if(dropped.length + out.length > maxDrop) out.length = Math.max(0, maxDrop - dropped.length);
+    if(!out.length) break;
+    out.slice().reverse().forEach(i => { dropped.push({ row: keep[i], t: t[i] }); keep.splice(i, 1); });
+    const next = refit();
+    if(!next) break;
+    fit = next;
+  }
+  return { fit, full, keep, dropped, hitTarget: null };
+}
+
 function sigStars(p){
   if(p<0.001) return '***';
   if(p<0.01)  return '**';
@@ -2635,73 +2715,103 @@ function sigStars(p){
 
 function runRegression(){
   const body = document.getElementById('reg-body');
-  const filtered = getFiltered().filter(s=>s.acres>0 && s.sale_price>0);
+  // Every sale used here needs an acreage, a price and a usable date
+  const filtered = getFiltered().filter(s => s.acres > 0 && s.sale_price > 0 && Number.isFinite(Number(s.sale_date)));
 
   if(filtered.length < 5){
-    body.innerHTML = '<div class="reg-empty">Need at least 5 sales with acreage data to run regression.</div>';
+    body.innerHTML = '<div class="reg-empty">Need at least 5 sales with acreage and date to run a regression.</div>';
     return;
   }
 
   const depVar   = document.getElementById('reg-dep')?.value   || 'price_per_acre';
   const useLog   = document.getElementById('reg-log')?.value   || 'log';
-  const minAcres = parseFloat(document.getElementById('reg-min-ac')?.value||0);
-  const maxAcres = parseFloat(document.getElementById('reg-max-ac')?.value||9999);
+  const trimMode = document.getElementById('reg-trim')?.value  || 'none';
+  const targetPct = Math.min(99, Math.max(1, parseFloat(document.getElementById('reg-target')?.value) || 80));
+  const maxTrimPct = Math.min(50, Math.max(1, parseFloat(document.getElementById('reg-maxtrim')?.value) || 20));
+  const _minIn   = parseFloat(document.getElementById('reg-min-ac')?.value);
+  const _maxIn   = parseFloat(document.getElementById('reg-max-ac')?.value);
+  const minAcres = Number.isFinite(_minIn) ? _minIn : 0;
+  const maxAcres = Number.isFinite(_maxIn) && _maxIn > 0 ? _maxIn : 9999;
 
   // Filter by acreage bounds
-  const data = filtered.filter(s=>s.acres>=minAcres && s.acres<=maxAcres);
+  const data = filtered.filter(s => s.acres >= minAcres && s.acres <= maxAcres);
   if(data.length < 5){
     body.innerHTML = '<div class="reg-empty">Not enough sales in that acreage range. Adjust filters.</div>';
     return;
   }
 
   // Build y vector
-  const raw_y = data.map(s=>{
-    if(depVar==='price_per_acre') return s.sale_price / s.acres;
-    if(depVar==='total_price')    return s.sale_price;
-    return s.sale_price / s.acres;
-  });
-  const y = useLog==='log' ? raw_y.map(v=>Math.log(v)) : raw_y;
+  const raw_y = data.map(s => depVar === 'total_price' ? s.sale_price : s.sale_price / s.acres);
+  if(useLog === 'log' && raw_y.some(v => !(v > 0))){
+    body.innerHTML = '<div class="reg-empty">Log model needs every value above zero — switch to Linear.</div>';
+    return;
+  }
+  const y = useLog === 'log' ? raw_y.map(v => Math.log(v)) : raw_y;
 
-  // Build X matrix [intercept, acres, log_acres, date_trend]
   let minDate = Infinity, maxDate = -Infinity;
   for(const d of data){ if(d.sale_date < minDate) minDate = d.sale_date; if(d.sale_date > maxDate) maxDate = d.sale_date; }
   const dateRange = maxDate - minDate || 1;
 
-  const X = data.map(s=>{
-    const ac = s.acres;
-    const dt = (s.sale_date - minDate) / dateRange; // 0–1 time trend
-    return [1, ac, Math.log(ac), dt];
+  // Only terms that actually vary in this sample — a constant column is collinear
+  // with the intercept and takes the whole model down with it
+  const candidates = [
+    { label: 'Acres',      f: s => s.acres },
+    { label: 'Ln(Acres)',  f: s => Math.log(s.acres) },
+    { label: 'Time Trend', f: s => (s.sale_date - minDate) / dateRange },
+  ];
+  const terms = candidates.filter(c => {
+    const v = data.map(c.f);
+    return v.every(Number.isFinite) && v.some(x => x !== v[0]);
   });
+  const droppedTerms = candidates.filter(c => !terms.includes(c)).map(c => c.label);
 
-  const labels = ['Intercept', 'Acres', 'Ln(Acres)', 'Time Trend'];
-  const result = ols(X, y);
-  if(!result){ body.innerHTML='<div class="reg-empty">Matrix inversion failed — data may be collinear.</div>'; return; }
+  const X = data.map(s => [1, ...terms.map(c => c.f(s))]);
+  const labels = ['Intercept', ...terms.map(c => c.label)];
+
+  if(data.length <= X[0].length + 1){
+    body.innerHTML = '<div class="reg-empty">Too few sales for this many terms — widen the filters.</div>';
+    return;
+  }
+
+  const trimResult = fitWithTrim(X, y, trimMode, targetPct / 100, maxTrimPct / 100);
+  if(!trimResult){ body.innerHTML = '<div class="reg-empty">Could not fit a model — the sales may be too alike (collinear).</div>'; return; }
+
+  const result   = trimResult.fit;
+  const fullFit  = trimResult.full;
+  const keptRows = trimResult.keep;
+  const kept     = keptRows.map(i => data[i]);
+  const droppedSales = trimResult.dropped.map(d => ({ sale: data[d.row], t: d.t }))
+                                         .sort((a, b) => Math.abs(b.t) - Math.abs(a.t));
 
   const { beta, SE, tstat, R2, adjR2, MSE, Fstat, yhat, resid, n, k } = result;
   const RMSE = Math.sqrt(MSE);
   const df   = n - k;
 
-  // Derived stats
-  const ybar   = y.reduce((s,v)=>s+v,0)/n;
-  const yActual= raw_y;
-  const yPred  = useLog==='log' ? yhat.map(v=>Math.exp(v)) : yhat;
-  const _sortedY = [...yActual].sort((a,b)=>a-b);
+  // Derived stats — all on the sales the model actually used
+  const yActual = keptRows.map(i => raw_y[i]);
+  const _sortedY = [...yActual].sort((a, b) => a - b);
   const medPPA = n % 2 ? _sortedY[(n-1)/2] : (_sortedY[n/2 - 1] + _sortedY[n/2]) / 2;
 
   // Time trend: annualised change
+  const trendIdx  = labels.indexOf('Time Trend');
   const yearFrac  = dateRange / (1000*60*60*24*365);
-  const trendCoef = beta[3]; // per unit of 0–1 range
-  const meanRaw   = raw_y.reduce((s,v)=>s+v,0)/n;
+  const trendCoef = trendIdx > 0 ? beta[trendIdx] : 0;
+  const meanRaw   = yActual.reduce((s, v) => s + v, 0) / n;
   let annualPct = 0;
-  if(yearFrac > 1/365){                       // need at least ~a day of date spread
-    annualPct = useLog==='log'
-      ? (Math.exp(trendCoef/yearFrac)-1)*100  // log model: coefficient is a log change
-      : (meanRaw ? (trendCoef/yearFrac)/meanRaw*100 : 0); // linear: $ per year as % of mean
+  if(trendIdx > 0 && yearFrac > 1/365){
+    annualPct = useLog === 'log'
+      ? (Math.exp(trendCoef / yearFrac) - 1) * 100
+      : (meanRaw ? (trendCoef / yearFrac) / meanRaw * 100 : 0);
   }
   if(!isFinite(annualPct)) annualPct = 0;
 
-  // Build HTML
-  const depLabel = depVar==='price_per_acre' ? (useLog==='log'?'Ln(Price/Acre)':'Price/Acre') : (useLog==='log'?'Ln(Sale Price)':'Sale Price');
+  // In a log model the residual spread reads as a percentage, which is how an
+  // appraiser would describe it
+  const typicalErrPct = (Math.exp(RMSE) - 1) * 100;
+
+  const depLabel = depVar === 'price_per_acre'
+    ? (useLog === 'log' ? 'Ln(Price/Acre)' : 'Price/Acre')
+    : (useLog === 'log' ? 'Ln(Sale Price)' : 'Sale Price');
 
   // Coef table rows
   const coefRows = beta.map((b,i)=>{
@@ -2730,7 +2840,48 @@ function runRegression(){
   });
   const eqStr = `${depLabel} = ${eqParts.join('')}`;
 
-  document.getElementById('reg-sample-label').textContent = `n = ${n} sales`;
+  // What trimming did, stated plainly — including the fit before it
+  const trimmedCount = droppedSales.length;
+  const trimNote = (() => {
+    if(trimMode === 'none') return '';
+    const pct = (trimmedCount / data.length * 100).toFixed(0);
+    const head = trimmedCount
+      ? `Excluded <strong>${trimmedCount}</strong> of ${data.length} sales (${pct}%). R² without trimming: <strong>${(fullFit.R2*100).toFixed(1)}%</strong>.`
+      : `No sales met the exclusion rule — the model below uses all ${data.length}.`;
+    const missed = (trimMode === 'target' && trimResult.hitTarget === false)
+      ? `<br><span class="warn">Stopped at the ${maxTrimPct}% trim cap without reaching ${targetPct}% — the remaining spread is in the data, not in a few sales.</span>`
+      : '';
+    const caution = (trimMode === 'target' && trimmedCount)
+      ? `<br><span class="warn">Trimming to a target R² fits the model to the goal. Report the untrimmed figure alongside it, and check each excluded sale below — an outlier is often a real sale with something different about it.</span>`
+      : '';
+    const list = trimmedCount ? `
+      <table class="reg-coef-table" style="margin-top:6px">
+        <thead><tr><th>Excluded sale</th><th>Date</th><th>Price</th><th>Acres</th><th>$/Acre</th><th>Std. residual</th></tr></thead>
+        <tbody>${droppedSales.slice(0,12).map(d => `<tr>
+          <td>${esc((d.sale.address || d.sale.parcel || '').slice(0,28))}</td>
+          <td>${fmtDate(d.sale.sale_date)}</td>
+          <td>${fmtFull(d.sale.sale_price)}</td>
+          <td>${d.sale.acres}</td>
+          <td>${d.sale.acres > 0 ? fmtFull(d.sale.sale_price / d.sale.acres) : '—'}</td>
+          <td class="${Math.abs(d.t) > 3 ? 'sig' : ''}">${d.t > 0 ? '+' : ''}${d.t.toFixed(2)}</td>
+        </tr>`).join('')}</tbody>
+      </table>
+      ${trimmedCount > 12 ? `<div style="font-size:.56rem;color:var(--muted);padding-top:4px">…and ${trimmedCount - 12} more</div>` : ''}` : '';
+    return `<div class="reg-trim-note">${head}${missed}${caution}${list}</div>`;
+  })();
+
+  // Where the excluded sales would have fallen, using the trimmed model
+  const dropPts = trimResult.dropped.map(d => {
+    const fitted = X[d.row].reduce((sum, v, j) => sum + v * beta[j], 0);
+    return { x: fitted, y: y[d.row] - fitted };
+  });
+
+  const termNote = droppedTerms.length
+    ? `<div class="reg-trim-note">Left out of the model: <strong>${droppedTerms.join(', ')}</strong> — no variation in this sample.</div>`
+    : '';
+
+  document.getElementById('reg-sample-label').textContent =
+    trimmedCount ? `n = ${n} of ${data.length} sales` : `n = ${n} sales`;
 
   body.innerHTML = `
     <div class="reg-section-title">Model Configuration</div>
@@ -2758,7 +2909,28 @@ function runRegression(){
         <label>Max Acres</label>
         <input type="number" id="reg-max-ac" value="${maxAcres>=9999?'':maxAcres}" placeholder="No limit" step="1" min="0" onchange="runRegression()" style="width:80px">
       </div>
+      <div class="reg-ctrl-group">
+        <label>Outliers</label>
+        <select id="reg-trim" onchange="runRegression()" title="Sales excluded from the fit only — the map, grid and comps are untouched">
+          <option value="none"   ${trimMode==='none'?'selected':''}>Keep all sales</option>
+          <option value="3"      ${trimMode==='3'?'selected':''}>Trim beyond 3 std errors</option>
+          <option value="2.5"    ${trimMode==='2.5'?'selected':''}>Trim beyond 2.5 std errors</option>
+          <option value="2"      ${trimMode==='2'?'selected':''}>Trim beyond 2 std errors</option>
+          <option value="target" ${trimMode==='target'?'selected':''}>Trim until R² target</option>
+        </select>
+      </div>
+      <div class="reg-ctrl-group" style="${trimMode==='target'?'':'display:none'}">
+        <label>Target R² (%)</label>
+        <input type="number" id="reg-target" value="${targetPct}" step="5" min="1" max="99" onchange="runRegression()" style="width:80px">
+      </div>
+      <div class="reg-ctrl-group" style="${trimMode==='none'?'display:none':''}">
+        <label>Trim cap (%)</label>
+        <input type="number" id="reg-maxtrim" value="${maxTrimPct}" step="5" min="1" max="50" onchange="runRegression()" style="width:80px"
+               title="Never exclude more than this share of the sales">
+      </div>
     </div>
+    ${termNote}
+    ${trimNote}
 
     <div class="reg-section-title" style="margin-top:4px">Model Fit</div>
 
@@ -2795,6 +2967,14 @@ function runRegression(){
         <div class="rsv">${df}</div>
         <div class="rsl">Degrees of Freedom</div>
       </div>
+      ${useLog==='log' ? `<div class="reg-stat-box">
+        <div class="rsv">±${typicalErrPct.toFixed(0)}%</div>
+        <div class="rsl">Typical Error</div>
+      </div>` : ''}
+      ${trimmedCount ? `<div class="reg-stat-box">
+        <div class="rsv" style="color:var(--danger)">${trimmedCount}</div>
+        <div class="rsl">Sales Excluded</div>
+      </div>` : ''}
     </div>
 
     <div class="reg-section-title" style="margin-top:4px">Regression Equation</div>
@@ -2815,7 +2995,7 @@ function runRegression(){
       Significance: *** p&lt;0.001 &nbsp; ** p&lt;0.01 &nbsp; * p&lt;0.05 &nbsp; · p&lt;0.1
     </div>
 
-    <div class="reg-section-title" style="margin-top:4px">Residuals vs Fitted</div>
+    <div class="reg-section-title" style="margin-top:4px">Residuals vs Fitted${trimmedCount ? ' <span style="text-transform:none;letter-spacing:0;color:var(--danger)">(red rings = excluded)</span>' : ''}</div>
     <div class="reg-chart-wrap" style="grid-column:span 2">
       <canvas id="reg-canvas"></canvas>
     </div>
@@ -2838,6 +3018,12 @@ function runRegression(){
       if(yhat[i]  > maxX) maxX = yhat[i];
       if(resid[i] < minY) minY = resid[i];
       if(resid[i] > maxY) maxY = resid[i];
+    }
+    for(const p of dropPts){
+      if(p.x < minX) minX = p.x;
+      if(p.x > maxX) maxX = p.x;
+      if(p.y < minY) minY = p.y;
+      if(p.y > maxY) maxY = p.y;
     }
     const xRange = maxX-minX||1, yRange = (maxY-minY)||1;
     const toX = v=>(v-minX)/xRange*(W-PAD.l-PAD.r)+PAD.l;
@@ -2868,6 +3054,17 @@ function runRegression(){
       ctx.beginPath();
       ctx.arc(toX(yhat[i]), toY(resid[i]), 3, 0, Math.PI*2);
       ctx.fill();
+    }
+
+    // Excluded sales — hollow red rings, so it's obvious what the fit left out
+    if(dropPts.length){
+      ctx.strokeStyle = 'rgba(232,74,74,.9)';
+      ctx.lineWidth = 1.2;
+      for(const p of dropPts){
+        ctx.beginPath();
+        ctx.arc(toX(p.x), toY(p.y), 4, 0, Math.PI*2);
+        ctx.stroke();
+      }
     }
 
     // Smoothed trend: running sums over the window instead of re-summing it per
