@@ -3,11 +3,25 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<!-- Only these hosts can serve code, styles, images or receive data. The page has
+     no backend, no login and no stored data, so this is the main hardening lever:
+     injected markup still can't pull in a script or phone anything home. -->
+<meta http-equiv="Content-Security-Policy" content="
+  default-src 'none';
+  script-src 'self' 'unsafe-inline' https://unpkg.com https://cdnjs.cloudflare.com https://cdn.jsdelivr.net;
+  style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://unpkg.com;
+  font-src https://fonts.gstatic.com;
+  img-src 'self' data: blob: https://server.arcgisonline.com https://maps.ohio.gov https://hazards.fema.gov https://unpkg.com;
+  connect-src 'self' https://gis.franklincountyohio.gov https://services7.arcgis.com https://maps.delco-gis.org https://services5.arcgis.com https://hazards.fema.gov https://unpkg.com https://cdnjs.cloudflare.com https://cdn.jsdelivr.net;
+  object-src 'none'; base-uri 'none'; form-action 'none';">
 <title>Franklin County — Vacant Land Sales</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=IBM+Plex+Mono:wght@400;500&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin="anonymous"></script>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      integrity="sha384-sHL9NAb7lN7rfvG5lfHpm643Xkcjzp4jFvuavGOndn6pjVqS6ny56CAt3nsEVT4H" crossorigin="anonymous"/>
+<!-- integrity: the browser refuses the file if a CDN ever serves something else -->
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+        integrity="sha384-cxOPjt7s7Iz04uaHJceBmS+qpjv2JkIHNVcuOrM+YHwZOmJGBXI00mdUXEq65HTH" crossorigin="anonymous"></script>
 <style>
 :root {
   --bg:#0c0e12; --panel:#131720; --border:#1f2736; --accent:#e8c84a;
@@ -969,10 +983,10 @@ body.mobile-mode .sel-bar .btn-generate{ flex:1 1 auto; }
           <button class="grid-size-btn export-btn" onclick="exportSales('xlsx')" id="export-xlsx" title="Export to Excel — selected comps if any are selected, otherwise every sale in the current results">⬇ Excel</button>
         </div>
         <div class="grid-size-btns">
-          <button class="grid-size-btn" onclick="setGridSize(120)" title="Small">S</button>
-          <button class="grid-size-btn active" onclick="setGridSize(260)" title="Medium">M</button>
-          <button class="grid-size-btn" onclick="setGridSize(420)" title="Large">L</button>
-          <button class="grid-size-btn" onclick="setGridSize(600)" title="Full">XL</button>
+          <button class="grid-size-btn grid-size-opt" data-size="120" onclick="setGridSize(120)" title="Small">S</button>
+          <button class="grid-size-btn active grid-size-opt" data-size="260" onclick="setGridSize(260)" title="Medium">M</button>
+          <button class="grid-size-btn grid-size-opt" data-size="420" onclick="setGridSize(420)" title="Large">L</button>
+          <button class="grid-size-btn grid-size-opt" data-size="600" onclick="setGridSize(600)" title="Full">XL</button>
         </div>
         <button class="grid-toggle" id="grid-toggle" onclick="toggleGrid()" title="Collapse/expand grid">▼</button>
       </div>
@@ -2272,7 +2286,8 @@ async function fetchParcelDetail(parcelId){
     const cc = countyConf();
     const pf = cc.fields.parcel;
     const params = new URLSearchParams({
-      where: `${pf} = '${parcelId}'`,
+      // sanitised here as well: this value came from the service's own response
+      where: `${pf} = '${sanitizeParcel(parcelId)}'`,
       outFields: getFields(),
       returnGeometry: 'false',
       f: 'json',
@@ -2323,8 +2338,8 @@ function buildQuickPopup(s, color){
         <span style="color:var(--muted);font-size:.6rem">⏳ Loading full detail…</span>
       </div>
       <div style="display:flex;gap:6px;margin-top:4px">
-        <button onclick="auditorOpen(sanitizeParcel('${s.parcel}'))" style="flex:1;padding:5px 4px;background:var(--accent);color:#0c0e12;border:none;border-radius:2px;cursor:pointer;font-family:'IBM Plex Mono',monospace;font-size:.62rem;font-weight:700">🔗 Auditor Site</button>
-        <button onclick="auditorCopy(sanitizeParcel('${s.parcel}'), this)" style="flex:1;padding:5px 4px;background:transparent;color:var(--accent2);border:1px solid var(--accent2);border-radius:2px;cursor:pointer;font-family:'IBM Plex Mono',monospace;font-size:.62rem">📋 Copy PIN</button>
+        <button onclick="auditorOpen('${esc(sanitizeParcel(s.parcel))}')" style="flex:1;padding:5px 4px;background:var(--accent);color:#0c0e12;border:none;border-radius:2px;cursor:pointer;font-family:'IBM Plex Mono',monospace;font-size:.62rem;font-weight:700">🔗 Auditor Site</button>
+        <button onclick="auditorCopy('${esc(sanitizeParcel(s.parcel))}', this)" style="flex:1;padding:5px 4px;background:transparent;color:var(--accent2);border:1px solid var(--accent2);border-radius:2px;cursor:pointer;font-family:'IBM Plex Mono',monospace;font-size:.62rem">📋 Copy PIN</button>
       </div>
     </div>`;
 }
@@ -2381,15 +2396,15 @@ function buildFullPopup(s, color, d, flood){
 
       ${section('Owner & Parcel')}
       <div class="pu-grid">
-        ${row('Owner', esc(owner).slice(0,30))}
-        ${row('Parcel #', s.parcel)}
-        ${row('Recorder Data', `<a class="rec-link" data-parcel="${esc(s.parcel)}" href="${saleRecorderUrl(s)}" target="_blank" title="${esc(recorderLinkTitle(s))}" style="color:var(--accent2);text-decoration:underline">Recorder Data</a>`)}
+        ${row('Owner', esc(String(owner).slice(0,30)))}
+        ${row('Parcel #', esc(s.parcel))}
+        ${row('Recorder Data', `<a class="rec-link" data-parcel="${esc(s.parcel)}" href="${saleRecorderUrl(s)}" target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer" title="${esc(recorderLinkTitle(s))}" style="color:var(--accent2);text-decoration:underline">Recorder Data</a>`)}
         ${row('Mail Address', mailAddr.slice(0,30)||'—')}
-        ${row('Neighborhood', nbhd)}
+        ${row('Neighborhood', esc(nbhd))}
         ${row('Use / Class', esc(String(useDesc).slice(0,26)))}
-        ${row('Class Code', (cf.classcd ? d[cf.classcd] : null)||s.class_cd||'—')}
-        ${row('Tax District', district)}
-        ${row('School Dist.', school)}
+        ${row('Class Code', esc((cf.classcd ? d[cf.classcd] : null)||s.class_cd||'—'))}
+        ${row('Tax District', esc(district))}
+        ${row('School Dist.', esc(school))}
       </div>
 
       ${section('Assessed Values & Tax')}
@@ -2404,11 +2419,11 @@ function buildFullPopup(s, color, d, flood){
       ${section('Site Characteristics')}
       <div class="pu-grid">
         ${flood
-            ? row('FEMA Flood Zone', '<span style="color:'+(flood.sfha?'#e84a4a':'#4ae8b0')+'">'+floodZoneLabel(flood.zone)+'</span>')
+            ? row('FEMA Flood Zone', '<span style="color:'+(flood.sfha?'#e84a4a':'#4ae8b0')+'">'+esc(floodZoneLabel(flood.zone))+'</span>')
             : (cf.flood
                 ? row('Flood Zone (Auditor)', '<span style="color:'+(floodOk?'#4ae8b0':'#e84a4a')+'">'+(floodOk?'✓ No':'⚠ Yes')+'</span>')
                 : row('Flood Zone', '<span style="color:var(--muted)">Not verified</span>'))}
-        ${flood && flood.bfe ? row('Base Flood Elevation', flood.bfe) : ''}
+        ${flood && flood.bfe ? row('Base Flood Elevation', esc(flood.bfe)) : ''}
         ${flood && flood.sfha ? row('Special Flood Hazard Area', '<span style="color:#e84a4a">⚠ Yes — insurance may be required</span>') : ''}
         ${row('Utilities', utils)}
         ${row('Water Svc', waterV==='Y'?'✓ Yes':'No')}
@@ -2420,10 +2435,10 @@ function buildFullPopup(s, color, d, flood){
       <div style="font-family:'IBM Plex Mono',monospace;font-size:.62rem;color:var(--muted);line-height:1.5;padding:4px 0">${esc(legal)}</div>` : ''}
 
       <div style="display:flex;gap:6px;margin-top:10px;padding-top:8px;border-top:1px solid #1f2736">
-        <button onclick="auditorOpen(sanitizeParcel('${s.parcel}'))" style="flex:1;padding:6px 4px;background:var(--accent);color:#0c0e12;border:none;border-radius:2px;cursor:pointer;font-family:'IBM Plex Mono',monospace;font-size:.62rem;font-weight:700;letter-spacing:.04em">
+        <button onclick="auditorOpen('${esc(sanitizeParcel(s.parcel))}')" style="flex:1;padding:6px 4px;background:var(--accent);color:#0c0e12;border:none;border-radius:2px;cursor:pointer;font-family:'IBM Plex Mono',monospace;font-size:.62rem;font-weight:700;letter-spacing:.04em">
           🔗 Open Auditor Site
         </button>
-        <button onclick="auditorCopy(sanitizeParcel('${s.parcel}'), this)" style="flex:1;padding:6px 4px;background:transparent;color:var(--accent2);border:1px solid var(--accent2);border-radius:2px;cursor:pointer;font-family:'IBM Plex Mono',monospace;font-size:.62rem;letter-spacing:.04em">
+        <button onclick="auditorCopy('${esc(sanitizeParcel(s.parcel))}', this)" style="flex:1;padding:6px 4px;background:transparent;color:var(--accent2);border:1px solid var(--accent2);border-radius:2px;cursor:pointer;font-family:'IBM Plex Mono',monospace;font-size:.62rem;letter-spacing:.04em">
           📋 Copy Parcel #
         </button>
       </div>
@@ -2536,7 +2551,7 @@ function updateList(filtered){
         <span class="result-date">${fmtDate(s.sale_date)}</span>
       </div>
       <div class="result-sub">${s.acres||0} ac · ${esc((s.class_desc||s.class_cd||'').slice(0,25))} · ${esc((s.district||'').slice(0,20))}</div>
-      <div class="result-sub"><a class="rec-link" data-parcel="${esc(s.parcel)}" href="${saleRecorderUrl(s)}" target="_blank" title="${esc(recorderLinkTitle(s))}" onclick="event.stopPropagation()" style="color:var(--accent2);text-decoration:none;font-size:.56rem">Recorder Data</a></div>
+      <div class="result-sub"><a class="rec-link" data-parcel="${esc(s.parcel)}" href="${saleRecorderUrl(s)}" target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer" title="${esc(recorderLinkTitle(s))}" onclick="event.stopPropagation()" style="color:var(--accent2);text-decoration:none;font-size:.56rem">Recorder Data</a></div>
     `;
     el.addEventListener('click',()=>{
       if(selModeOn){ toggleCompSelection(s); return; }
@@ -3227,8 +3242,8 @@ function setGridSize(px, skipActive){
   setTimeout(() => pane.classList.remove('animating'), 280);
   // Update active size button
   if(!skipActive){
-    document.querySelectorAll('.grid-size-btn').forEach(b => {
-      b.classList.toggle('active', parseInt(b.getAttribute('onclick').match(/\d+/)[0]) === px);
+    document.querySelectorAll('.grid-size-opt').forEach(b => {
+      b.classList.toggle('active', parseInt(b.dataset.size, 10) === px);
     });
   }
   // Force Leaflet to recalc map size
@@ -3285,7 +3300,7 @@ function toggleGrid(){
       gridCollapsed = false;
     }
     // Clear active size btn while dragging
-    document.querySelectorAll('.grid-size-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.grid-size-opt').forEach(b => b.classList.remove('active'));
   });
 
   document.addEventListener('mouseup', () => {
@@ -3387,7 +3402,7 @@ function gridRowHtml(s, isSelected){
       <td class="td-muted">${esc((s.district || '').slice(0, 18))}</td>
       <td class="${impvIsFlagged(s) ? 'td-razed' : 'td-muted'}">${impvDisplay(s)}</td>
       <td style="text-align:center">${s.razed_score > 0 ? s.razed_score : ''}</td>
-      <td style="padding:4px 8px;"><a class="rec-link" data-parcel="${esc(s.parcel)}" href="${saleRecorderUrl(s)}" target="_blank" title="${esc(recorderLinkTitle(s))}" style="color:var(--accent2);text-decoration:none;font-size:.58rem;white-space:nowrap">Recorder Data</a></td>
+      <td style="padding:4px 8px;"><a class="rec-link" data-parcel="${esc(s.parcel)}" href="${saleRecorderUrl(s)}" target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer" title="${esc(recorderLinkTitle(s))}" style="color:var(--accent2);text-decoration:none;font-size:.58rem;white-space:nowrap">Recorder Data</a></td>
     </tr>`;
 }
 
@@ -3402,7 +3417,7 @@ function gridRowHtmlMobile(s, isSelected){
       <td>${ppa}</td>
       <td class="td-muted">${esc((s.class_desc || '').slice(0,16))}</td>
       <td style="text-align:center">${s.razed_score > 0 ? s.razed_score : ''}</td>
-      <td><a class="rec-link" data-parcel="${esc(s.parcel)}" href="${saleRecorderUrl(s)}" target="_blank" title="${esc(recorderLinkTitle(s))}" style="color:var(--accent2);text-decoration:none;font-size:.54rem">📋</a></td>
+      <td><a class="rec-link" data-parcel="${esc(s.parcel)}" href="${saleRecorderUrl(s)}" target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer" title="${esc(recorderLinkTitle(s))}" style="color:var(--accent2);text-decoration:none;font-size:.54rem">📋</a></td>
     </tr>`;
 }
 
@@ -3508,6 +3523,27 @@ function sgToggleComp(parcelId, checkbox){
 
 // ── END SALES GRID ────────────────────────────────────────────────────────────
 
+// Load a pinned library from the first source that serves the expected file.
+// The integrity hash means a compromised or swapped CDN file is refused rather
+// than executed — these libraries build the documents that go out to clients.
+async function loadLibrary(globalName, sources, integrity){
+  for(const src of sources){
+    try {
+      await new Promise((res, rej) => {
+        const el = document.createElement('script');
+        el.src = src;
+        el.integrity = integrity;
+        el.crossOrigin = 'anonymous';
+        el.onload = res;
+        el.onerror = () => rej(new Error('blocked or failed: ' + src));
+        document.head.appendChild(el);
+      });
+      if(window[globalName]) return true;
+    } catch(e){ console.warn('library source rejected:', src, e.message); }
+  }
+  return !!window[globalName];
+}
+
 // ── EXPORT ───────────────────────────────────────────────────────────────────
 // Exports the selected comps when there are any, otherwise every sale that
 // passes the current filters, in the order the grid is sorted.
@@ -3581,8 +3617,11 @@ function exportCsv(sales, what){
   const esc = v => {
     if(v == null) return '';
     if(v instanceof Date) return fmtDate(v.getTime());
-    const str = String(v);
-    return /[",\n]/.test(str) ? '"' + str.replace(/"/g, '""') + '"' : str;
+    let str = String(v);
+    // Excel and Sheets run a cell starting with these as a formula; a leading
+    // apostrophe keeps a county address or legal description as plain text
+    if(/^[=+\-@\t\r]/.test(str)) str = "'" + str;
+    return /[",\n\r]/.test(str) ? '"' + str.replace(/"/g, '""') + '"' : str;
   };
   const lines = [EXPORT_COLUMNS.map(c => esc(c[0])).join(',')];
   sales.forEach(s => lines.push(EXPORT_COLUMNS.map(c => esc(c[1](s))).join(',')));
@@ -3594,20 +3633,10 @@ function exportCsv(sales, what){
 async function exportXlsx(sales, what){
   toast('Building the spreadsheet…');
   if(!window.XLSX){
-    const cdns = [
+    await loadLibrary('XLSX', [
       'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js',
-      'https://unpkg.com/xlsx@0.18.5/dist/xlsx.full.min.js',
-    ];
-    for(const src of cdns){
-      try {
-        await new Promise((res, rej) => {
-          const el = document.createElement('script');
-          el.src = src; el.onload = res; el.onerror = rej;
-          document.head.appendChild(el);
-        });
-        if(window.XLSX) break;
-      } catch(e){ console.warn('xlsx CDN failed:', src, e); }
-    }
+      'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js',
+    ], 'sha384-vtjasyidUo0kW94K5MXDXntzOJpQgBKXmE7e2Ga4LG0skTTLeBi97eFAXsqewJjw');
   }
   if(!window.XLSX){
     toast('Could not load the Excel library — exporting CSV instead', true);
@@ -3840,28 +3869,13 @@ async function generateSalesSheet(){
 }
 
 async function buildAndDownloadDocx(comps){
-  // Load docx-js from CDN (try primary, then fallback)
   if(!window.docx){
-    const cdns = [
-      'https://cdnjs.cloudflare.com/ajax/libs/docx/8.5.0/docx.umd.min.js',
-      'https://unpkg.com/docx@8.5.0/build/index.umd.js'
-    ];
-    let loaded = false;
-    for(const src of cdns){
-      try {
-        await new Promise((res, rej) => {
-          const s = document.createElement('script');
-          s.src = src;
-          s.onload = res;
-          s.onerror = rej;
-          document.head.appendChild(s);
-        });
-        if(window.docx){ loaded = true; break; }
-      } catch(e) { console.warn('docx CDN failed:', src, e); }
-    }
-    if(!loaded || !window.docx){
-      throw new Error('Could not load docx library. Check your internet connection and try again.');
-    }
+    // Two sources, one hash: a CDN that served anything else would be rejected
+    const ok = await loadLibrary('docx', [
+      'https://unpkg.com/docx@8.5.0/build/index.umd.js',
+      'https://cdn.jsdelivr.net/npm/docx@8.5.0/build/index.umd.js',
+    ], 'sha384-4xaIisuLEy2lo2HkB2C4rEf7v8jbTb2kuogX6TkuEt9feTWKBSFSOzsqNNbV+sKh');
+    if(!ok) throw new Error('Could not load the Word library. Check your connection and try again.');
   }
 
   if(!window.docx) throw new Error('docx library not available — please refresh and try again.');
@@ -4061,6 +4075,10 @@ document.addEventListener('DOMContentLoaded', () => {
 // Run the default search unless one is already running or data is loaded
 function autoSearch(){
   if(isFetching || allSales.length) return;
+  // Don't let an embedded copy of this page turn every view into a county query
+  let embedded = false;
+  try { embedded = window.top !== window.self; } catch(e){ embedded = true; }
+  if(embedded) return;
   runQuery();
 }
 
@@ -4219,8 +4237,8 @@ function mobRenderResults(rows){
         <span class="result-price" style="color:${color}">${fmtFull(s.sale_price)}</span>
         <span class="result-date">${fmtDate(s.sale_date)}</span>
       </div>
-      <div class="result-sub">${s.acres||0} ac · ${(s.class_desc||'').slice(0,22)} · ${(s.district||'').slice(0,18)}</div>
-      <div class="result-sub"><a class="rec-link" data-parcel="${esc(s.parcel)}" href="${saleRecorderUrl(s)}" target="_blank" title="${esc(recorderLinkTitle(s))}" onclick="event.stopPropagation()" style="color:var(--accent2);font-size:.54rem;text-decoration:none">Recorder Data</a></div>
+      <div class="result-sub">${s.acres||0} ac · ${esc((s.class_desc||'').slice(0,22))} · ${esc((s.district||'').slice(0,18))}</div>
+      <div class="result-sub"><a class="rec-link" data-parcel="${esc(s.parcel)}" href="${saleRecorderUrl(s)}" target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer" title="${esc(recorderLinkTitle(s))}" onclick="event.stopPropagation()" style="color:var(--accent2);font-size:.54rem;text-decoration:none">Recorder Data</a></div>
     `;
     el.addEventListener('click', e => {
       if(e.target.tagName === 'A') return;
