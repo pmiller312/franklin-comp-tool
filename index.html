@@ -178,6 +178,8 @@ body.mobile-mode .query-panel .btn-clear { display: none; }
   font-size:.55rem;padding:2px 6px;transition:all .12s;
 }
 .grid-size-btn:hover,.grid-size-btn.active{border-color:var(--accent);color:var(--accent);}
+.export-btn{border-color:var(--accent2);color:var(--accent2);}
+.export-btn:hover{background:var(--accent2);color:#0c0e12;border-color:var(--accent2);}
 .grid-toggle{
   background:transparent;border:none;color:var(--muted);
   cursor:pointer;font-size:.9rem;padding:2px 6px;
@@ -961,7 +963,11 @@ body.mobile-mode .sel-bar .btn-generate{ flex:1 1 auto; }
     <div class="grid-header">
       <span id="grid-count">Run query to populate grid</span>
       <div style="display:flex;align-items:center;gap:8px;">
-        <span style="color:var(--muted);font-size:.54rem;">☑ to select comp · header to sort</span>
+        <span style="color:var(--muted);font-size:.54rem;" id="export-hint">☑ to select comp · header to sort · export = selected comps, or all results</span>
+        <div class="grid-size-btns">
+          <button class="grid-size-btn export-btn" onclick="exportSales('csv')" id="export-csv" title="Export to CSV — selected comps if any are selected, otherwise every sale in the current results">⬇ CSV</button>
+          <button class="grid-size-btn export-btn" onclick="exportSales('xlsx')" id="export-xlsx" title="Export to Excel — selected comps if any are selected, otherwise every sale in the current results">⬇ Excel</button>
+        </div>
         <div class="grid-size-btns">
           <button class="grid-size-btn" onclick="setGridSize(120)" title="Small">S</button>
           <button class="grid-size-btn active" onclick="setGridSize(260)" title="Medium">M</button>
@@ -3502,6 +3508,124 @@ function sgToggleComp(parcelId, checkbox){
 
 // ── END SALES GRID ────────────────────────────────────────────────────────────
 
+// ── EXPORT ───────────────────────────────────────────────────────────────────
+// Exports the selected comps when there are any, otherwise every sale that
+// passes the current filters, in the order the grid is sorted.
+function salesForExport(){
+  const set = selectedComps.length ? selectedComps.slice() : getFiltered();
+  return gridSortRows(set.map(s => (s.ppa = s.acres > 0 ? s.sale_price / s.acres : 0, s)));
+}
+
+const EXPORT_COLUMNS = [
+  ['County',              s => COUNTY_CONFIG[s.county]?.name || s.county],
+  ['Parcel',              s => s.parcel],
+  ['Address',             s => s.address],
+  ['Tax District',        s => s.district],
+  ['School District',     s => s.school],
+  ['Sale Date',           s => (s.sale_date ? new Date(s.sale_date) : '')],
+  ['Sale Price',          s => s.sale_price || ''],
+  ['Acres',               s => s.acres || ''],
+  ['Price per Acre',      s => (s.acres > 0 ? Math.round(s.sale_price / s.acres) : '')],
+  ['Price per Sq Ft',     s => (s.acres > 0 ? +(s.sale_price / (s.acres * 43560)).toFixed(2) : '')],
+  ['Class Code',          s => s.class_cd],
+  ['Class Description',   s => s.class_desc],
+  ['Improvement',         s => (s.bld_count != null ? s.bld_count + ' bldg' : (s.impv_value == null ? 'n/a' : s.impv_value))],
+  ['Appraised Land',      s => s.lnd_value || ''],
+  ['Appraised Total',     s => s.mkt_value || ''],
+  ['Flood (Auditor)',     s => (countyConf().fields.flood ? (s.flood === 'Y' ? 'Yes' : 'No') : 'Not published')],
+  ['Water',               s => (s.water === 'Y' ? 'Yes' : 'No')],
+  ['Sewer',               s => (s.sewer === 'Y' ? 'Yes' : 'No')],
+  ['Parcels in Sale',     s => s.txn_parcel_count || 1],
+  ['Possible Razed Site', s => (s.razed_flag ? 'Yes' : 'No')],
+  ['Razed Score',         s => s.razed_score || 0],
+  ['Razed Signals',       s => (s.razed_reasons || []).join('; ')],
+  ['Owner (current)',     s => s.owner],
+  ['Legal Description',   s => s.legal],
+  ['Latitude',            s => s.lat],
+  ['Longitude',           s => s.lng],
+  ['Auditor Link',        s => (AUDITOR_DEEP_LINKS[s.county] || AUDITOR_DEEP_LINKS.franklin)(s.parcel).url],
+  ['Recorder Link',       s => saleRecorderUrl(s)],
+];
+
+function exportFileName(ext){
+  const cc = countyConf();
+  const stamp = new Date().toISOString().slice(0,10);
+  const what  = selectedComps.length ? 'comps' : 'vacant-land-sales';
+  return `${cc.name.toLowerCase().replace(/[^a-z]+/g,'-')}-${what}-${stamp}.${ext}`;
+}
+
+function downloadBlob(blob, filename){
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 4000);
+}
+
+function exportSales(format){
+  const sales = salesForExport();
+  if(!sales.length){ toast('Nothing to export — run a search first', true); return; }
+  const what = selectedComps.length
+    ? `${sales.length} selected comp${sales.length > 1 ? 's' : ''}`
+    : `${sales.length.toLocaleString()} sales`;
+  try {
+    if(format === 'xlsx') return exportXlsx(sales, what);
+    exportCsv(sales, what);
+  } catch(e){
+    toast('Export failed: ' + (e.message || e), true);
+    console.error(e);
+  }
+}
+
+function exportCsv(sales, what){
+  const esc = v => {
+    if(v == null) return '';
+    if(v instanceof Date) return fmtDate(v.getTime());
+    const str = String(v);
+    return /[",\n]/.test(str) ? '"' + str.replace(/"/g, '""') + '"' : str;
+  };
+  const lines = [EXPORT_COLUMNS.map(c => esc(c[0])).join(',')];
+  sales.forEach(s => lines.push(EXPORT_COLUMNS.map(c => esc(c[1](s))).join(',')));
+  // The BOM keeps Excel from mangling the © and ° characters in legal descriptions
+  downloadBlob(new Blob(['\ufeff' + lines.join('\r\n')], { type:'text/csv;charset=utf-8' }), exportFileName('csv'));
+  toast(`✓ Exported ${what} to CSV`);
+}
+
+async function exportXlsx(sales, what){
+  toast('Building the spreadsheet…');
+  if(!window.XLSX){
+    const cdns = [
+      'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js',
+      'https://unpkg.com/xlsx@0.18.5/dist/xlsx.full.min.js',
+    ];
+    for(const src of cdns){
+      try {
+        await new Promise((res, rej) => {
+          const el = document.createElement('script');
+          el.src = src; el.onload = res; el.onerror = rej;
+          document.head.appendChild(el);
+        });
+        if(window.XLSX) break;
+      } catch(e){ console.warn('xlsx CDN failed:', src, e); }
+    }
+  }
+  if(!window.XLSX){
+    toast('Could not load the Excel library — exporting CSV instead', true);
+    return exportCsv(sales, what);
+  }
+  const aoa = [EXPORT_COLUMNS.map(c => c[0])].concat(sales.map(s => EXPORT_COLUMNS.map(c => {
+    const v = c[1](s);
+    return v == null ? '' : v;
+  })));
+  const ws = XLSX.utils.aoa_to_sheet(aoa, { cellDates: true });
+  ws['!cols'] = EXPORT_COLUMNS.map(c => ({ wch: Math.min(38, Math.max(10, c[0].length + 4)) }));
+  ws['!freeze'] = { xSplit: 0, ySplit: 1 };
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Sales');
+  XLSX.writeFile(wb, exportFileName('xlsx'), { cellDates: true });
+  toast(`✓ Exported ${what} to Excel`);
+}
+
 // ── AUDITOR SITE HELPERS ──────────────────────────────────────────────────────
 // Sanitize parcel ID — only allow alphanumeric, hyphens, dots (all county formats)
 function sanitizeParcel(p){ return String(p||'').replace(/[^a-zA-Z0-9\-.]/g,''); }
@@ -4424,8 +4548,12 @@ document.getElementById('q-date-to').value =
 
     <!-- GRID PANE -->
     <div class="mob-pane" id="mob-pane-grid">
-      <div style="padding:5px 10px;font-family:'IBM Plex Mono',monospace;font-size:.56rem;color:var(--muted);border-bottom:1px solid var(--border);">
+      <div style="padding:5px 10px;font-family:'IBM Plex Mono',monospace;font-size:.56rem;color:var(--muted);border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;gap:8px;">
         <span id="mob-grid-count">Run query to populate</span>
+        <span class="grid-size-btns">
+          <button class="grid-size-btn export-btn" onclick="exportSales('csv')">⬇ CSV</button>
+          <button class="grid-size-btn export-btn" onclick="exportSales('xlsx')">⬇ Excel</button>
+        </span>
       </div>
       <div class="mob-grid-wrap">
         <table class="sg" id="mob-sg-table">
