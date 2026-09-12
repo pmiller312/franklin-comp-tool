@@ -1257,7 +1257,9 @@ function getFields(){
 }
 
 // ── MAP ───────────────────────────────────────────────────────────────────────
-const map = L.map('map',{zoomControl:false}).setView([39.98,-82.99],11);
+// preferCanvas: one canvas repaint instead of a DOM node per sale, which is the
+// difference between a smooth map and a stuck one at several thousand markers.
+const map = L.map('map',{zoomControl:false, preferCanvas:true}).setView([39.98,-82.99],11);
 
 // Base layers
 // CARTO's free basemaps now watermark every tile with "API KEY REQUIRED",
@@ -1321,13 +1323,20 @@ function toggleFlood(){
   if(floodOn){
     btn.classList.add('active');
     drawFloodImage();
-    map.on('moveend', drawFloodImage);
+    map.on('moveend', drawFloodImageSoon);
   } else {
     if(floodOverlay){ map.removeLayer(floodOverlay); floodOverlay = null; }
     btn.classList.remove('active');
     btn.textContent = '💧 FEMA Flood';
-    map.off('moveend', drawFloodImage);
+    clearTimeout(_floodTimer);
+    map.off('moveend', drawFloodImageSoon);
   }
+}
+
+var _floodTimer = null;
+function drawFloodImageSoon(){
+  clearTimeout(_floodTimer);
+  _floodTimer = setTimeout(drawFloodImage, 400);   // one export per settled view
 }
 
 function drawFloodImage(){
@@ -1365,12 +1374,14 @@ function drawFloodImage(){
     floodOn = false;
     btn.classList.remove('active');
     btn.textContent = '💧 FEMA Flood';
-    map.off('moveend', drawFloodImage);
+    clearTimeout(_floodTimer);
+    map.off('moveend', drawFloodImageSoon);
   });
 
   floodOverlay.on('load', function(){
     btn.textContent = '💧 Flood ON';
-    markerLayer.addTo(map); // keep dots on top
+    if(markerLayer.bringToFront) markerLayer.bringToFront();   // cheaper than re-adding
+    else markerLayer.addTo(map);
   });
 
   floodOverlay.addTo(map);
@@ -1470,6 +1481,13 @@ const RECORDER_URLS = {
   delaware:  'https://delaware.dts-central-oh.com/PaxWorld/',
   medina:    'https://recorder.co.medina.oh.us/document-search/',
 };
+
+// Cached per sale: this is four Date objects, three regexes and a JSON encode,
+// and it used to run for every row of every render.
+function saleRecorderUrl(s){
+  if(s._recUrl == null) s._recUrl = recorderUrl(s.owner, s.sale_date);
+  return s._recUrl;
+}
 
 function recorderUrl(ownerName, saleTs){
   const recBase = RECORDER_URLS[activeCounty] || RECORDER_URLS.franklin;
@@ -1779,6 +1797,8 @@ async function runQuery(){
   // ── End validation ───────────────────────────────────────────────────────
 
   isFetching = true;
+  _detailCache.clear();
+  _floodCache.clear();
 
   const { signal, token } = startQuery();
   const btn    = document.getElementById('btn-fetch');
@@ -2166,6 +2186,20 @@ function renderClassChips(){
 
 // ── MOBILE API PARCEL DETAIL ─────────────────────────────────────────────────
 // Fetch full parcel detail from the GIS FeatureServer (CORS-friendly, same source as bulk query)
+const _detailCache = new Map();   // county|parcel -> promise
+const _floodCache   = new Map();   // rounded lat,lng -> promise
+
+function fetchParcelDetailCached(parcelId){
+  const key = activeCounty + '|' + parcelId;
+  if(!_detailCache.has(key)) _detailCache.set(key, fetchParcelDetail(parcelId));
+  return _detailCache.get(key);
+}
+function queryFloodZoneCached(lat, lng){
+  const key = lat.toFixed(5) + ',' + lng.toFixed(5);
+  if(!_floodCache.has(key)) _floodCache.set(key, queryFloodZone(lat, lng));
+  return _floodCache.get(key);
+}
+
 async function fetchParcelDetail(parcelId){
   // County-aware: query the active county's endpoint with its own field names
   try {
@@ -2283,7 +2317,7 @@ function buildFullPopup(s, color, d, flood){
       <div class="pu-grid">
         ${row('Owner', esc(owner).slice(0,30))}
         ${row('Parcel #', s.parcel)}
-        ${row('Recorder Data', `<a href="${recorderUrl(s.owner, s.sale_date)}" target="_blank" style="color:var(--accent2);text-decoration:underline">Recorder Data</a>`)}
+        ${row('Recorder Data', `<a href="${saleRecorderUrl(s)}" target="_blank" style="color:var(--accent2);text-decoration:underline">Recorder Data</a>`)}
         ${row('Mail Address', mailAddr.slice(0,30)||'—')}
         ${row('Neighborhood', nbhd)}
         ${row('Use / Class', esc(String(useDesc).slice(0,26)))}
@@ -2350,14 +2384,16 @@ function getFiltered(){
 function render(){
   markerLayer.clearLayers();
   const filtered = getFiltered();
-
   filtered.sort((a,b)=>a.sale_price-b.sale_price);
+
+  const selectedParcels = new Set(selectedComps.map(c => c.parcel));
+
   filtered.forEach(s=>{
     const color     = priceColor(s.sale_price);
     const r         = priceRadius(s.sale_price);
     const op        = saleOpacity(s.sale_date);
     // Razed/redeveloped sites get a magenta border ring to stand out
-    const isSelected = selectedComps.some(c => c.parcel === s.parcel);
+    const isSelected = selectedParcels.has(s.parcel);
     const dotColor  = isSelected ? '#ffffff' : (s.razed_flag ? '#e84ab0' : color);
     const ringColor = isSelected ? '#ffffff' : (s.razed_flag ? '#e84ab0' : 'rgba(0,0,0,.3)');
     const ringWeight= isSelected ? 3 : (s.razed_flag ? 2 : 1);
@@ -2372,18 +2408,24 @@ function render(){
       if(selModeOn){ L.DomEvent.stop(e); toggleCompSelection(s); return; }
     });
 
-    // Bind initial quick popup
-    circle.bindPopup(buildQuickPopup(s, color), {maxWidth:330, maxHeight:480});
+    // Popup HTML is built when the popup opens, not for every dot up front
+    circle.bindPopup(() => buildQuickPopup(s, color), {maxWidth:330, maxHeight:480});
 
-    // On open: fetch full detail from mobile API and update popup
+    // On open: fetch full detail and flood zone, then swap in the full panel
     circle.on('popupopen', async () => {
-      // Fetch parcel detail and flood zone in parallel
-      const [detail, flood] = await Promise.all([
-        fetchParcelDetail(s.parcel),
-        queryFloodZone(s.lat, s.lng)
-      ]);
-      if(circle.getPopup()){
+      const gen = (s._popupGen = (s._popupGen || 0) + 1);
+      try {
+        const [detail, flood] = await Promise.all([
+          fetchParcelDetailCached(s.parcel),
+          queryFloodZoneCached(s.lat, s.lng)
+        ]);
+        // Ignore a slow answer if the popup closed or was reopened since
+        if(gen !== s._popupGen || !circle.isPopupOpen()) return;
         circle.getPopup().setContent(buildFullPopup(s, color, detail || {}, flood));
+      } catch(e){
+        console.warn('popup detail failed', e);
+        if(gen === s._popupGen && circle.isPopupOpen())
+          circle.getPopup().setContent(buildQuickPopup(s, color).replace('⏳ Loading full detail…', '⚠ Could not load full detail'));
       }
     });
 
@@ -2392,8 +2434,8 @@ function render(){
 
   updateStats(filtered);
   updateList(filtered);
-  renderGrid();
-  mobOnRender();
+  if(!isMobileMode()) renderGrid(filtered);   // the desktop grid is hidden on phones
+  mobOnRender(filtered);
   document.getElementById('results-header').textContent =
     `${filtered.length.toLocaleString()} of ${allSales.length.toLocaleString()} sales`;
 }
@@ -2412,7 +2454,7 @@ function updateStats(filtered){
 }
 
 function updateList(filtered){
-  const top = [...filtered].sort((a,b)=>b.sale_price-a.sale_price).slice(0,100);
+  const top = filtered.slice(-100).reverse();   // filtered is already sorted by price
   const list = document.getElementById('results-list');
   list.innerHTML = '';
   top.forEach(s=>{
@@ -2426,7 +2468,7 @@ function updateList(filtered){
         <span class="result-date">${fmtDate(s.sale_date)}</span>
       </div>
       <div class="result-sub">${s.acres||0} ac · ${esc((s.class_desc||s.class_cd||'').slice(0,25))} · ${esc((s.district||'').slice(0,20))}</div>
-      <div class="result-sub"><a href="${recorderUrl(s.owner, s.sale_date)}" target="_blank" onclick="event.stopPropagation()" style="color:var(--accent2);text-decoration:none;font-size:.56rem">Recorder Data</a></div>
+      <div class="result-sub"><a href="${saleRecorderUrl(s)}" target="_blank" onclick="event.stopPropagation()" style="color:var(--accent2);text-decoration:none;font-size:.56rem">Recorder Data</a></div>
     `;
     el.addEventListener('click',()=>{
       if(selModeOn){ toggleCompSelection(s); return; }
@@ -2615,8 +2657,8 @@ function runRegression(){
   const y = useLog==='log' ? raw_y.map(v=>Math.log(v)) : raw_y;
 
   // Build X matrix [intercept, acres, log_acres, date_trend]
-  const minDate = Math.min(...data.map(s=>s.sale_date));
-  const maxDate = Math.max(...data.map(s=>s.sale_date));
+  let minDate = Infinity, maxDate = -Infinity;
+  for(const d of data){ if(d.sale_date < minDate) minDate = d.sale_date; if(d.sale_date > maxDate) maxDate = d.sale_date; }
   const dateRange = maxDate - minDate || 1;
 
   const X = data.map(s=>{
@@ -2783,8 +2825,13 @@ function runRegression(){
     const W = canvas.offsetWidth, H = canvas.offsetHeight;
     const PAD = {l:48,r:16,t:12,b:32};
 
-    const minX = Math.min(...yhat), maxX = Math.max(...yhat);
-    const minY = Math.min(...resid), maxY = Math.max(...resid);
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    for(let i = 0; i < yhat.length; i++){
+      if(yhat[i]  < minX) minX = yhat[i];
+      if(yhat[i]  > maxX) maxX = yhat[i];
+      if(resid[i] < minY) minY = resid[i];
+      if(resid[i] > maxY) maxY = resid[i];
+    }
     const xRange = maxX-minX||1, yRange = (maxY-minY)||1;
     const toX = v=>(v-minX)/xRange*(W-PAD.l-PAD.r)+PAD.l;
     const toY = v=>H-PAD.b-(v-minY)/yRange*(H-PAD.t-PAD.b);
@@ -2807,28 +2854,29 @@ function runRegression(){
     ctx.save();ctx.translate(12,H/2);ctx.rotate(-Math.PI/2);
     ctx.fillText('Residuals',0,0);ctx.restore();
 
-    // Points
-    yhat.forEach((fx,i)=>{
-      const px=toX(fx), py=toY(resid[i]);
-      const alpha = 0.6;
+    // Points — a 180px-tall chart shows nothing extra past a couple of thousand
+    const step = Math.max(1, Math.ceil(yhat.length / 2000));
+    ctx.fillStyle = 'rgba(232,200,74,0.6)';
+    for(let i = 0; i < yhat.length; i += step){
       ctx.beginPath();
-      ctx.arc(px,py,3,0,Math.PI*2);
-      ctx.fillStyle=`rgba(232,200,74,${alpha})`;
+      ctx.arc(toX(yhat[i]), toY(resid[i]), 3, 0, Math.PI*2);
       ctx.fill();
-    });
+    }
 
-    // LOWESS-style smoothed trend (simple moving average)
+    // Smoothed trend: running sums over the window instead of re-summing it per
+    // point, which was 40 million operations at 10,000 records
     const sorted = yhat.map((v,i)=>({x:v,y:resid[i]})).sort((a,b)=>a.x-b.x);
     const bw = Math.max(5, Math.floor(sorted.length*0.2));
+    const prefix = new Float64Array(sorted.length + 1);
+    for(let i = 0; i < sorted.length; i++) prefix[i+1] = prefix[i] + sorted[i].y;
     ctx.strokeStyle='rgba(232,74,74,.8)';ctx.lineWidth=1.5;
     ctx.beginPath();
-    sorted.forEach((pt,i)=>{
-      const lo=Math.max(0,i-bw), hi=Math.min(sorted.length-1,i+bw);
-      const slice=sorted.slice(lo,hi+1);
-      const avgY=slice.reduce((s,p)=>s+p.y,0)/slice.length;
-      const px=toX(pt.x), py=toY(avgY);
-      i===0?ctx.moveTo(px,py):ctx.lineTo(px,py);
-    });
+    for(let i = 0; i < sorted.length; i++){
+      const lo = Math.max(0, i - bw), hi = Math.min(sorted.length - 1, i + bw);
+      const avgY = (prefix[hi+1] - prefix[lo]) / (hi - lo + 1);
+      const px = toX(sorted[i].x), py = toY(avgY);
+      i === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
+    }
     ctx.stroke();
   });
 }
@@ -2988,76 +3036,120 @@ function gridSortRows(rows){
 
 // Lightweight: update only selected-row highlights without full re-render
 function refreshGridSelState(){
-  const tbody = document.getElementById('sg-body');
-  if(!tbody) return;
-  const selectedParcels = new Set(selectedComps.map(c => c.parcel));
-  tbody.querySelectorAll('tr[data-parcel]').forEach(row => {
-    const p = row.dataset.parcel;
-    const sel = selectedParcels.has(p);
-    row.classList.toggle('sg-selected', sel);
-    const cb = row.querySelector('input.sg-check');
-    if(cb) cb.checked = sel;
-  });
-  mobOnRender();
+  paintGridView(GRID_VIEWS.desktop);
+  if(isMobileMode()) paintGridView(GRID_VIEWS.mobile);
+  mobRenderComps();
 }
 
-function renderGrid(){
-  const filtered = getFiltered();
-  const tbody = document.getElementById('sg-body');
-  if(!tbody) return;
+// Both grids draw only the rows inside their scroll window, with spacer rows
+// standing in for the rest. A 10,000-row result used to build 110,000 DOM nodes
+// into a pane that shows about 25 of them.
+const GRID_VIEWS = {
+  desktop: { tbody:'sg-body',     scroller:'.grid-scroll',  cols:11, row:gridRowHtml,       rowH:23 },
+  mobile:  { tbody:'mob-sg-body', scroller:'.mob-grid-wrap', cols:9, row:gridRowHtmlMobile, rowH:34 },
+};
+var _gridRows = [];        // the sorted rows behind both grids
 
-  // Add computed ppa for sorting
-  const rows = filtered.map(s => ({ ...s, ppa: s.acres > 0 ? s.sale_price / s.acres : 0 }));
-
-  gridSortRows(rows);
-
-  // Update count
-  const countEl = document.getElementById('grid-count');
-  if(countEl) countEl.textContent = `${rows.length.toLocaleString()} sales`;
-
-  // Build rows
-  tbody.innerHTML = '';
-  rows.forEach(s => {
-    const isSelected = typeof selectedComps !== 'undefined' && selectedComps.some(c => c.parcel === s.parcel);
-    const tr = document.createElement('tr');
-    tr.dataset.parcel = s.parcel;
-    if(isSelected) tr.classList.add('sg-selected');
-    if(s.razed_flag) tr.classList.add('sg-flagged');
-
-    const ppa = s.acres > 0 ? '$' + Math.round(s.sale_price / s.acres).toLocaleString() : '—';
-    const impv = impvDisplay(s);
-    const dateStr = fmtDate(s.sale_date);
-    const cls = (s.class_desc || s.class_cd || '').slice(0, 22);
-    const dist = (s.district || '').slice(0, 18);
-
-    tr.innerHTML = `
+function gridRowHtml(s, isSelected){
+  const ppa  = s.acres > 0 ? '$' + Math.round(s.sale_price / s.acres).toLocaleString() : '—';
+  return `<tr data-parcel="${esc(s.parcel)}" class="${isSelected ? 'sg-selected ' : ''}${s.razed_flag ? 'sg-flagged' : ''}">
       <td style="text-align:center;padding:4px 6px;">
-        <input type="checkbox" class="sg-check" ${isSelected ? 'checked' : ''}
-          onclick="event.stopPropagation(); sgToggleComp(sanitizeParcel('${s.parcel}'), this)"
-          title="Select as comp">
+        <input type="checkbox" class="sg-check" ${isSelected ? 'checked' : ''} title="Select as comp">
       </td>
       <td>${s.razed_flag ? '🔥 ' : ''}${esc(s.address || s.parcel)}</td>
-      <td class="td-muted">${dateStr}</td>
+      <td class="td-muted">${fmtDate(s.sale_date)}</td>
       <td class="td-price">${fmtFull(s.sale_price)}</td>
       <td class="td-muted">${s.acres || '—'}</td>
       <td>${ppa}</td>
-      <td class="td-muted">${cls}</td>
-      <td class="td-muted">${dist}</td>
-      <td class="${impvIsFlagged(s) ? 'td-razed' : 'td-muted'}">${impv}</td>
+      <td class="td-muted">${esc((s.class_desc || s.class_cd || '').slice(0, 22))}</td>
+      <td class="td-muted">${esc((s.district || '').slice(0, 18))}</td>
+      <td class="${impvIsFlagged(s) ? 'td-razed' : 'td-muted'}">${impvDisplay(s)}</td>
       <td style="text-align:center">${s.razed_score > 0 ? s.razed_score : ''}</td>
-      <td style="padding:4px 8px;"><a href="${recorderUrl(s.owner, s.sale_date)}" target="_blank" onclick="event.stopPropagation()" style="color:var(--accent2);text-decoration:none;font-size:.58rem;white-space:nowrap">Recorder Data</a></td>
-    `;
-
-    // Click row to fly to map marker and also toggle selection
-    tr.addEventListener('click', (e) => {
-      if(e.target.type === 'checkbox' || e.target.tagName === 'A') return;
-      if(selModeOn){ sgToggleComp(s.parcel, tr.querySelector('input.sg-check')); return; }
-      map.setView([s.lat, s.lng], 17);
-    });
-
-    tbody.appendChild(tr);
-  });
+      <td style="padding:4px 8px;"><a href="${saleRecorderUrl(s)}" target="_blank" style="color:var(--accent2);text-decoration:none;font-size:.58rem;white-space:nowrap">Recorder Data</a></td>
+    </tr>`;
 }
+
+function gridRowHtmlMobile(s, isSelected){
+  const ppa = s.acres > 0 ? '$' + Math.round(s.sale_price / s.acres).toLocaleString() : '—';
+  return `<tr data-parcel="${esc(s.parcel)}" class="${isSelected ? 'sg-selected ' : ''}${s.razed_flag ? 'sg-flagged' : ''}">
+      <td style="text-align:center;padding:4px 5px"><input type="checkbox" class="sg-check" ${isSelected ? 'checked' : ''}></td>
+      <td>${s.razed_flag ? '🔥 ' : ''}${esc((s.address || s.parcel).slice(0,22))}</td>
+      <td class="td-muted">${fmtDate(s.sale_date)}</td>
+      <td class="td-price">${fmtFull(s.sale_price)}</td>
+      <td class="td-muted">${s.acres || '—'}</td>
+      <td>${ppa}</td>
+      <td class="td-muted">${esc((s.class_desc || '').slice(0,16))}</td>
+      <td style="text-align:center">${s.razed_score > 0 ? s.razed_score : ''}</td>
+      <td><a href="${saleRecorderUrl(s)}" target="_blank" style="color:var(--accent2);text-decoration:none;font-size:.54rem">📋</a></td>
+    </tr>`;
+}
+
+function paintGridView(view){
+  const tbody = document.getElementById(view.tbody);
+  const scroller = document.querySelector(view.scroller);
+  if(!tbody || !scroller) return;
+  if(!_gridRows.length){ tbody.innerHTML = ''; return; }
+
+  const rowH    = view.rowH;
+  const total   = _gridRows.length;
+  const perView = Math.ceil((scroller.clientHeight || 260) / rowH);
+  const start   = Math.max(0, Math.floor(scroller.scrollTop / rowH) - 8);
+  const end     = Math.min(total, start + perView + 16);
+  const selected = new Set(selectedComps.map(c => c.parcel));
+
+  const before = start * rowH, after = (total - end) * rowH;
+  let html = before ? `<tr class="sg-pad" style="height:${before}px"><td colspan="${view.cols}"></td></tr>` : '';
+  for(let i = start; i < end; i++) html += view.row(_gridRows[i], selected.has(_gridRows[i].parcel));
+  if(after) html += `<tr class="sg-pad" style="height:${after}px"><td colspan="${view.cols}"></td></tr>`;
+  tbody.innerHTML = html;
+
+  // Learn the real row height once so the spacers stay honest
+  const first = tbody.querySelector('tr:not(.sg-pad)');
+  if(first){
+    const h = Math.round(first.getBoundingClientRect().height);
+    if(h && Math.abs(h - view.rowH) > 1){ view.rowH = h; paintGridView(view); }
+  }
+}
+
+function renderGrid(rows){
+  const filtered = rows || getFiltered();
+  _gridRows = gridSortRows(filtered.map(s => (s.ppa = s.acres > 0 ? s.sale_price / s.acres : 0, s)));
+
+  const countEl = document.getElementById('grid-count');
+  if(countEl) countEl.textContent = `${_gridRows.length.toLocaleString()} sales`;
+
+  paintGridView(GRID_VIEWS.desktop);
+  if(isMobileMode()) paintGridView(GRID_VIEWS.mobile);
+}
+
+// One set of listeners for each grid, instead of a pair per row
+function wireGrid(view){
+  const tbody = document.getElementById(view.tbody);
+  const scroller = document.querySelector(view.scroller);
+  if(!tbody || !scroller) return;
+
+  tbody.addEventListener('click', e => {
+    const tr = e.target.closest('tr[data-parcel]');
+    if(!tr) return;
+    if(e.target.tagName === 'A') return;                       // recorder link
+    const sale = allSales.find(x => x.parcel === tr.dataset.parcel);
+    if(!sale) return;
+    if(e.target.classList.contains('sg-check') || selModeOn){
+      sgToggleComp(sale.parcel, tr.querySelector('input.sg-check'));
+      return;
+    }
+    map.setView([sale.lat, sale.lng], view === GRID_VIEWS.mobile ? 16 : 17);
+    if(view === GRID_VIEWS.mobile) mobSetHeight(MOB_SNAP.collapsed);
+  });
+
+  let queued = false;
+  scroller.addEventListener('scroll', () => {
+    if(queued) return;
+    queued = true;
+    requestAnimationFrame(() => { queued = false; paintGridView(view); });
+  }, { passive: true });
+}
+document.addEventListener('DOMContentLoaded', () => { wireGrid(GRID_VIEWS.desktop); wireGrid(GRID_VIEWS.mobile); });
 
 function sgToggleComp(parcelId, checkbox){
   // Find the sale
@@ -3126,7 +3218,7 @@ function toggleSelMode(){
   btn.classList.toggle('active', selModeOn);
   btn.textContent = selModeOn ? '☑ Selecting…' : '☑ Select Comps';
   document.getElementById('sel-bar').classList.toggle('hidden', !selModeOn && selectedComps.length === 0);
-  renderGrid(); // sync checkbox state in grid
+  refreshGridSelState(); // just the checkboxes, not a full grid rebuild
   if(isMobileMode()) mobRenderComps();
   if(!selModeOn && selectedComps.length === 0) clearSelection();
   toast(selModeOn ? 'Click up to 5 sales on the map or list to select comps' : 'Selection mode off');
@@ -3201,8 +3293,8 @@ async function generateSalesSheet(){
   // Fetch full GIS detail for each selected comp
   try {
   const [detailsArr, floodsArr] = await Promise.all([
-    Promise.all(selectedComps.map(s => fetchParcelDetail(s.parcel).catch(() => ({})))),
-    Promise.all(selectedComps.map(s => queryFloodZone(s.lat, s.lng)))
+    Promise.all(selectedComps.map(s => fetchParcelDetailCached(s.parcel).catch(() => ({})))),
+    Promise.all(selectedComps.map(s => queryFloodZoneCached(s.lat, s.lng).catch(() => null)))
   ]);
 
   // Build data rows for each comp
@@ -3547,7 +3639,7 @@ function mobInit(){
   if(handle) mobInitDrag(handle);
 }
 
-function mobSetHeight(h, instant){
+function mobSetHeight(h, instant, skipMapResize){
   h = Math.max(88, Math.min(Math.round(window.innerHeight * 0.88), h));
   _mobPanelH = h;
   const panel = document.getElementById('mob-panel');
@@ -3555,7 +3647,7 @@ function mobSetHeight(h, instant){
   if(instant){ panel.classList.add('no-transition'); panel.style.height = h+'px'; requestAnimationFrame(()=>panel.classList.remove('no-transition')); }
   else        { panel.style.height = h+'px'; }
   document.body.style.setProperty('--mob-panel-h', h+'px');
-  setTimeout(()=>map.invalidateSize(), instant ? 0 : 260);
+  if(!skipMapResize) setTimeout(()=>map.invalidateSize(), instant ? 0 : 260);
 }
 
 function mobShowPane(name){
@@ -3586,13 +3678,14 @@ function mobInitDrag(handle){
   function onMove(y){
     if(!dragging) return;
     const delta = startY - y;
-    mobSetHeight(startH + delta, true);
+    mobSetHeight(startH + delta, true, true);   // skip the map resize while dragging
   }
   function onEnd(){
     if(!dragging) return;
     dragging = false;
     handle.classList.remove('dragging');
     document.body.style.userSelect = '';
+    map.invalidateSize();
     // Snap to nearest preset
     const snaps = Object.values(MOB_SNAP);
     const nearest = snaps.reduce((a,b) => Math.abs(a-_mobPanelH) < Math.abs(b-_mobPanelH) ? a : b);
@@ -3650,9 +3743,9 @@ async function mobFetch(){
 }
 
 // ── Results pane ──────────────────────────────────────────────────────────
-function mobRenderResults(){
+function mobRenderResults(rows){
   if(!isMobileMode()) return;
-  const filtered = typeof getFiltered === 'function' ? getFiltered() : allSales || [];
+  const filtered = rows || getFiltered();
   const countEl  = document.getElementById('mob-results-count');
   if(countEl) countEl.textContent = filtered.length.toLocaleString() + ' results';
 
@@ -3674,7 +3767,7 @@ function mobRenderResults(){
         <span class="result-date">${fmtDate(s.sale_date)}</span>
       </div>
       <div class="result-sub">${s.acres||0} ac · ${(s.class_desc||'').slice(0,22)} · ${(s.district||'').slice(0,18)}</div>
-      <div class="result-sub"><a href="${recorderUrl(s.owner,s.sale_date)}" target="_blank" onclick="event.stopPropagation()" style="color:var(--accent2);font-size:.54rem;text-decoration:none">Recorder Data</a></div>
+      <div class="result-sub"><a href="${saleRecorderUrl(s)}" target="_blank" onclick="event.stopPropagation()" style="color:var(--accent2);font-size:.54rem;text-decoration:none">Recorder Data</a></div>
     `;
     el.addEventListener('click', e => {
       if(e.target.tagName === 'A') return;
@@ -3691,45 +3784,13 @@ function mobRenderResults(){
 }
 
 // ── Grid pane ─────────────────────────────────────────────────────────────
-function mobRenderGrid(){
+function mobRenderGrid(rows){
   if(!isMobileMode()) return;
-  const filtered = typeof getFiltered === 'function' ? getFiltered() : allSales || [];
+  const filtered = rows || getFiltered();
   const countEl  = document.getElementById('mob-grid-count');
   if(countEl) countEl.textContent = filtered.length.toLocaleString() + ' sales';
-
-  const rows = gridSortRows(filtered.map(s => ({...s, ppa: s.acres > 0 ? s.sale_price / s.acres : 0})));
-
-  const tbody = document.getElementById('mob-sg-body');
-  if(!tbody) return;
-  tbody.innerHTML = '';
-  rows.forEach(s => {
-    const isSelected = typeof selectedComps !== 'undefined' && selectedComps.some(c => c.parcel === s.parcel);
-    const tr  = document.createElement('tr');
-    if(isSelected) tr.classList.add('sg-selected');
-    if(s.razed_flag) tr.classList.add('sg-flagged');
-    const ppa = s.acres > 0 ? '$' + Math.round(s.sale_price/s.acres).toLocaleString() : '—';
-    tr.innerHTML = `
-      <td style="text-align:center;padding:4px 5px">
-        <input type="checkbox" class="sg-check" ${isSelected?'checked':''}
-          onclick="event.stopPropagation();sgToggleComp(sanitizeParcel('${s.parcel}'),this)">
-      </td>
-      <td>${s.razed_flag?'🔥 ':''}${esc((s.address||s.parcel).slice(0,22))}</td>
-      <td class="td-muted">${fmtDate(s.sale_date)}</td>
-      <td class="td-price">${fmtFull(s.sale_price)}</td>
-      <td class="td-muted">${s.acres||'—'}</td>
-      <td>${ppa}</td>
-      <td class="td-muted">${(s.class_desc||'').slice(0,16)}</td>
-      <td style="text-align:center">${s.razed_score>0?s.razed_score:''}</td>
-      <td><a href="${recorderUrl(s.owner,s.sale_date)}" target="_blank" onclick="event.stopPropagation()" style="color:var(--accent2);text-decoration:none;font-size:.54rem">📋</a></td>
-    `;
-    tr.addEventListener('click', e => {
-      if(e.target.type==='checkbox'||e.target.tagName==='A') return;
-      if(selModeOn){ sgToggleComp(s.parcel, tr.querySelector('input.sg-check')); return; }
-      map.setView([s.lat, s.lng], 16);
-      mobSetHeight(MOB_SNAP.collapsed);
-    });
-    tbody.appendChild(tr);
-  });
+  if(!_gridRows.length || _gridRows.length !== filtered.length) renderGrid(filtered);
+  else paintGridView(GRID_VIEWS.mobile);
 }
 
 // ── Comps pane ────────────────────────────────────────────────────────────
@@ -3755,10 +3816,10 @@ function mobRenderComps(){
 }
 
 // ── Hook into render() to refresh mobile panes ────────────────────────────
-function mobOnRender(){
+function mobOnRender(rows){
   if(!isMobileMode()) return;
-  if(_mobPane === 'results') mobRenderResults();
-  if(_mobPane === 'grid')    mobRenderGrid();
+  if(_mobPane === 'results') mobRenderResults(rows);
+  if(_mobPane === 'grid')    mobRenderGrid(rows);
   if(_mobPane === 'comps')   mobRenderComps();
   // Sync sel button
   const selBtn = document.getElementById('mob-sel-btn');
