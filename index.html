@@ -1510,12 +1510,40 @@ const AUDITOR_URLS = {
 // Franklin/Cuyahoga use publicsearch.us with name+date params
 // Delaware uses dts-central-oh.com (PaxWorld platform) — no deep link params
 // Medina uses recorder.co.medina.oh.us — no deep link params
+// Checked against each site, Sep 2026:
+//   Franklin / Cuyahoga (publicsearch.us) — party name + recorded date range work
+//     as URL parameters, so those links land on a real search.
+//   Delaware (DTS PaxWorld) — ASP.NET postbacks behind a disclaimer, no linkable
+//     search, so the owner name is copied for pasting.
+//   Medina (AVA) — has a Parcel field that lists every document on a parcel, but
+//     the app keeps its state in memory, so the parcel number is copied instead.
 const RECORDER_URLS = {
   franklin:  'https://franklin.oh.publicsearch.us/results?department=RP',
   cuyahoga:  'https://cuyahoga.oh.publicsearch.us/results?department=RP',
   delaware:  'https://delaware.dts-central-oh.com/PaxWorld/',
-  medina:    'https://recorder.medinacounty.gov/document-search/',
+  medina:    'https://recorder-search.medinacounty.gov/OHMedina/AvaWeb/#/search',
 };
+
+// What to hand the user when the county's site can't be deep-linked
+function recorderClipboardHint(s){
+  if(activeCounty === 'medina')   return { text: sanitizeParcel(s.parcel), msg: `Parcel ${s.parcel} copied — paste it into the Parcel field under Advanced Criteria` };
+  if(activeCounty === 'delaware') return s.owner ? { text: s.owner, msg: `Owner "${s.owner}" copied — accept the disclaimer, then search by name` } : null;
+  if(activeCounty === 'cuyahoga' && !s.owner)
+    return { text: sanitizeParcel(s.parcel), msg: `Cuyahoga's sales data carries no owner name — parcel ${s.parcel} copied; search MyPlace by parcel, or the recorder by name` };
+  return null;
+}
+
+// Recorder links are plain links; this just copies the useful value on the way out
+document.addEventListener('click', e => {
+  const a = e.target.closest && e.target.closest('a.rec-link');
+  if(!a) return;
+  const sale = allSales.find(x => x.parcel === a.dataset.parcel);
+  if(!sale) return;
+  const hint = recorderClipboardHint(sale);
+  if(!hint) return;
+  if(navigator.clipboard?.writeText) navigator.clipboard.writeText(hint.text).catch(()=>{});
+  toast(hint.msg);
+});
 
 // Cached per sale: this is four Date objects, three regexes and a JSON encode,
 // and it used to run for every row of every render.
@@ -2349,7 +2377,7 @@ function buildFullPopup(s, color, d, flood){
       <div class="pu-grid">
         ${row('Owner', esc(owner).slice(0,30))}
         ${row('Parcel #', s.parcel)}
-        ${row('Recorder Data', `<a href="${saleRecorderUrl(s)}" target="_blank" title="${esc(recorderLinkTitle(s))}" style="color:var(--accent2);text-decoration:underline">Recorder Data</a>`)}
+        ${row('Recorder Data', `<a class="rec-link" data-parcel="${esc(s.parcel)}" href="${saleRecorderUrl(s)}" target="_blank" title="${esc(recorderLinkTitle(s))}" style="color:var(--accent2);text-decoration:underline">Recorder Data</a>`)}
         ${row('Mail Address', mailAddr.slice(0,30)||'—')}
         ${row('Neighborhood', nbhd)}
         ${row('Use / Class', esc(String(useDesc).slice(0,26)))}
@@ -2502,7 +2530,7 @@ function updateList(filtered){
         <span class="result-date">${fmtDate(s.sale_date)}</span>
       </div>
       <div class="result-sub">${s.acres||0} ac · ${esc((s.class_desc||s.class_cd||'').slice(0,25))} · ${esc((s.district||'').slice(0,20))}</div>
-      <div class="result-sub"><a href="${saleRecorderUrl(s)}" target="_blank" title="${esc(recorderLinkTitle(s))}" onclick="event.stopPropagation()" style="color:var(--accent2);text-decoration:none;font-size:.56rem">Recorder Data</a></div>
+      <div class="result-sub"><a class="rec-link" data-parcel="${esc(s.parcel)}" href="${saleRecorderUrl(s)}" target="_blank" title="${esc(recorderLinkTitle(s))}" onclick="event.stopPropagation()" style="color:var(--accent2);text-decoration:none;font-size:.56rem">Recorder Data</a></div>
     `;
     el.addEventListener('click',()=>{
       if(selModeOn){ toggleCompSelection(s); return; }
@@ -3353,7 +3381,7 @@ function gridRowHtml(s, isSelected){
       <td class="td-muted">${esc((s.district || '').slice(0, 18))}</td>
       <td class="${impvIsFlagged(s) ? 'td-razed' : 'td-muted'}">${impvDisplay(s)}</td>
       <td style="text-align:center">${s.razed_score > 0 ? s.razed_score : ''}</td>
-      <td style="padding:4px 8px;"><a href="${saleRecorderUrl(s)}" target="_blank" title="${esc(recorderLinkTitle(s))}" style="color:var(--accent2);text-decoration:none;font-size:.58rem;white-space:nowrap">Recorder Data</a></td>
+      <td style="padding:4px 8px;"><a class="rec-link" data-parcel="${esc(s.parcel)}" href="${saleRecorderUrl(s)}" target="_blank" title="${esc(recorderLinkTitle(s))}" style="color:var(--accent2);text-decoration:none;font-size:.58rem;white-space:nowrap">Recorder Data</a></td>
     </tr>`;
 }
 
@@ -3368,7 +3396,7 @@ function gridRowHtmlMobile(s, isSelected){
       <td>${ppa}</td>
       <td class="td-muted">${esc((s.class_desc || '').slice(0,16))}</td>
       <td style="text-align:center">${s.razed_score > 0 ? s.razed_score : ''}</td>
-      <td><a href="${saleRecorderUrl(s)}" target="_blank" title="${esc(recorderLinkTitle(s))}" style="color:var(--accent2);text-decoration:none;font-size:.54rem">📋</a></td>
+      <td><a class="rec-link" data-parcel="${esc(s.parcel)}" href="${saleRecorderUrl(s)}" target="_blank" title="${esc(recorderLinkTitle(s))}" style="color:var(--accent2);text-decoration:none;font-size:.54rem">📋</a></td>
     </tr>`;
 }
 
@@ -4068,7 +4096,7 @@ function mobRenderResults(rows){
         <span class="result-date">${fmtDate(s.sale_date)}</span>
       </div>
       <div class="result-sub">${s.acres||0} ac · ${(s.class_desc||'').slice(0,22)} · ${(s.district||'').slice(0,18)}</div>
-      <div class="result-sub"><a href="${saleRecorderUrl(s)}" target="_blank" title="${esc(recorderLinkTitle(s))}" onclick="event.stopPropagation()" style="color:var(--accent2);font-size:.54rem;text-decoration:none">Recorder Data</a></div>
+      <div class="result-sub"><a class="rec-link" data-parcel="${esc(s.parcel)}" href="${saleRecorderUrl(s)}" target="_blank" title="${esc(recorderLinkTitle(s))}" onclick="event.stopPropagation()" style="color:var(--accent2);font-size:.54rem;text-decoration:none">Recorder Data</a></div>
     `;
     el.addEventListener('click', e => {
       if(e.target.tagName === 'A') return;
