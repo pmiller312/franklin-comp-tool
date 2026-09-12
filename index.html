@@ -861,7 +861,7 @@ body.mobile-mode .sel-bar .btn-generate{ flex:1 1 auto; }
         <div style="color:#4ae8b0;font-weight:700;letter-spacing:.06em;margin-bottom:4px;">✓ VACANCY VERIFICATION</div>
         <div id="vacancy-detail" style="color:#9fb09f;">All results are filtered to <span style="color:var(--text);">Ohio DTE vacant land class codes</span>. <span style="color:var(--text);">Max Improvement Value</span> sets the improvement value test applied to every parcel: <span style="color:var(--text);">= $0</span> is strictly vacant, a dollar amount allows a small tolerance, and <span style="color:var(--text);">Any</span> applies no improvement test.</div>
         <div style="margin-top:5px;color:#9fb09f;">When a limit is set, <span style="color:var(--text);">all parcels</span> in a multi-parcel sale (matched by date + price + owner) must pass — if any parcel exceeds the limit, the entire sale is excluded.</div>
-        <div style="margin-top:5px;border-top:1px solid #1a2a1a;padding-top:5px;color:#8fa08f;">🛰 <em>Imagery:</em> The map opens on Esri World Imagery. The button cycles to the dark map, then OSIP Ohio (6-inch, public domain, © OGRIP / Ohio DAS), then back to Esri. OSIP is Ohio-specific leaf-off orthoimagery; resolution and vintage vary by county.<br><br>⚠ <em>Razed-site detection</em> is heuristic. Signals: keyword match in legal/deed (strongest, +3), utilities on vacant parcel (+1/+2), sale price 20×+ the auditor's appraised land value (+1/+2), platted lot number (+1). Score ≥ 2 = flagged. The value fields read here are <span style="color:var(--text);">appraised (market) values</span>, not the 35% taxable figure. Across 2024–2026 vacant sales the median sale runs about 5× appraised land value and roughly a quarter exceed 20×, so treat the price signal as suggestive. Improvement figures come from the auditor's records, not a physical inspection, and a recent demolition or a lagging update can leave either field out of date. Verify individual comps independently.</div>
+        <div style="margin-top:5px;border-top:1px solid #1a2a1a;padding-top:5px;color:#8fa08f;">🛰 <em>Imagery:</em> The map opens on the dark basemap. The 🛰 button cycles to OSIP Ohio (6-inch, public domain, © OGRIP / Ohio DAS), then Esri World Imagery, then back to dark. OSIP is Ohio-specific leaf-off orthoimagery; resolution and vintage vary by county.<br><br>⚠ <em>Razed-site detection</em> is heuristic. Signals: keyword match in legal/deed (strongest, +3), utilities on vacant parcel (+1/+2), sale price 20×+ the auditor's appraised land value (+1/+2), platted lot number (+1). Score ≥ 2 = flagged. The value fields read here are <span style="color:var(--text);">appraised (market) values</span>, not the 35% taxable figure. Across 2024–2026 vacant sales the median sale runs about 5× appraised land value and roughly a quarter exceed 20×, so treat the price signal as suggestive. Improvement figures come from the auditor's records, not a physical inspection, and a recent demolition or a lagging update can leave either field out of date. Verify individual comps independently.</div>
       </div>
     </div>
 
@@ -902,8 +902,8 @@ body.mobile-mode .sel-bar .btn-generate{ flex:1 1 auto; }
     <button class="aerial-btn" id="aerial-btn" onclick="cycleAerial()">🛰 Aerial</button>
     <div class="source-badge" id="source-badge">
       <button class="overlay-hide-btn" onclick="hideOverlay('source-badge')" title="Hide">×</button>
-      <span class="warn">⚠ No data loaded</span><br>
-      Set filters and click <strong>Search Data</strong>
+      <span class="warn">⏳ Loading sales…</span><br>
+      Adjust the filters and click <strong>Search Data</strong> to refine
     </div>
     <div class="legend" id="map-legend" style="position:absolute">
       <button class="overlay-hide-btn" onclick="hideOverlay('map-legend')" title="Hide">×</button>
@@ -1305,7 +1305,7 @@ osipLayer.on('tileerror', function(){
   setAerialMode(2);
 });
 osipLayer.on('tileload', function(){ _osipErrors = 0; });
-// Esri World Imagery — the default view
+// Esri World Imagery — the aerial the button cycles to (and the OSIP fallback)
 const esriLayer = L.tileLayer(
   'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{
   attribution:'Tiles © Esri — Source: Esri, USGS, NOAA', maxZoom:19
@@ -1578,8 +1578,8 @@ function floodZoneLabel(z){
   return map[z.toUpperCase()] || z;
 }
 var markerLayer = L.layerGroup().addTo(map);
-// aerialMode: 0=dark, 1=OSIP, 2=Esri — the map opens on Esri aerial
-var aerialMode = 2;
+// aerialMode: 0=dark, 1=OSIP, 2=Esri — the map opens on the dark basemap
+var aerialMode = 0;
 
 function cycleAerial(){
   setAerialMode((aerialMode + 1) % 3);
@@ -1766,10 +1766,10 @@ async function fetchJsonWithRetry(url, opts, attempts = 3){
 }
 
 async function runQuery(){
-  if(isFetching){          // a second click stops the search instead of doing nothing
-    cancelQuery();
-    return;
-  }
+  // Clicking Search during a search (the page runs one on load) means "search with
+  // what I've set now" — so stop that one and start this one. Clear Results stops
+  // a search outright.
+  if(isFetching) cancelQuery();
 
   // ── Input validation ────────────────────────────────────────────────────
   try {
@@ -1811,9 +1811,9 @@ async function runQuery(){
   const { signal, token } = startQuery();
   const btn    = document.getElementById('btn-fetch');
   const mobBtn = document.getElementById('mob-btn-fetch');
-  btn.textContent = '⏳ Searching… (click to stop)';
-  btn.title = 'Click to stop this search';
-  if(mobBtn){ mobBtn.textContent = '⏳ Searching… (tap to stop)'; }
+  btn.textContent = '⏳ Searching…';
+  btn.title = 'Searching — click to restart with your current filters, or Clear Results to stop';
+  if(mobBtn){ mobBtn.textContent = '⏳ Searching…'; }
 
   showSearchProgress(true);
   setProgress(5, 'Building query…');
@@ -2510,7 +2510,7 @@ function clearData(){
   document.getElementById('s-avg').textContent = '—';
   document.getElementById('s-ppa').textContent = '—';
   document.getElementById('freshness-tag').textContent = 'No data loaded';
-  document.getElementById('source-badge').innerHTML = '<button class="overlay-hide-btn" onclick="hideOverlay(\'source-badge\')" title="Hide">×</button><span class="warn">⚠ No data loaded</span><br>Set filters and click <strong>Search Data</strong>';
+  document.getElementById('source-badge').innerHTML = '<button class="overlay-hide-btn" onclick="hideOverlay(\'source-badge\')" title="Hide">×</button><span class="warn">No sales loaded</span><br>Adjust the filters and click <strong>Search Data</strong>';
   document.getElementById('reg-btn').disabled = true;
   document.getElementById('hdr-gen-btn').disabled = true;
   document.getElementById('sel-mode-btn').disabled = true;
@@ -3852,7 +3852,14 @@ MOBILE_MQ.addEventListener('change', applyMobileMode);
 var _mobInited = false;
 document.addEventListener('DOMContentLoaded', () => {
   if(document.getElementById('mob-panel')) mobInit();
+  autoSearch();          // land on a populated map rather than an empty one
 });
+
+// Run the default search unless one is already running or data is loaded
+function autoSearch(){
+  if(isFetching || allSales.length) return;
+  runQuery();
+}
 
 // ── Mobile panel state ─────────────────────────────────────────────────────
 var _mobPane     = 'filters';
@@ -3979,8 +3986,6 @@ function syncMobFilter(){
 }
 
 async function mobFetch(){
-  const btn = document.getElementById('mob-btn-fetch');
-  if(isFetching){ cancelQuery(); return; }   // second tap stops the search
   syncMobFilter();
   await runQuery();
   // Only move off the filters once there is something to look at
@@ -4193,14 +4198,15 @@ function switchCounty(key){
   const zooms = { franklin: 11, cuyahoga: 11, delaware: 11, medina: 11 };
   if(centers[key]) map.setView(centers[key], zooms[key] || 11);
 
-  // Clear existing data
+  // Clear the old county's data and load the new one straight away
   clearData();
-  toast(`Switched to ${COUNTY_CONFIG[key].name}`);
+  toast(`Switched to ${COUNTY_CONFIG[key].name} — searching…`);
+  autoSearch();
 }
 
 // ── INIT ──────────────────────────────────────────────────────────────────────
-// Open on Esri World Imagery (aerial) with street labels
-setAerialMode(2);
+// Open on the dark basemap; the 🛰 button cycles to OSIP and Esri imagery
+setAerialMode(0);
 
 // Populate the class dropdown from the active county's codes
 rebuildClassSelects();
