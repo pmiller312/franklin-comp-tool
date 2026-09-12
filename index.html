@@ -17,7 +17,7 @@
 *{margin:0;padding:0;box-sizing:border-box;}
 html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;}
 
-.app{display:grid;grid-template-rows:52px 1fr;height:100vh;}
+.app{display:grid;grid-template-rows:52px 1fr;grid-template-columns:minmax(0,1fr);height:100vh;overflow:hidden;}
 
 header{
   background:var(--panel);border-bottom:2px solid var(--accent);
@@ -207,6 +207,9 @@ table.sg td.td-muted{color:var(--muted);}
   width:14px;height:14px;accent-color:var(--accent2);cursor:pointer;
   flex-shrink:0;
 }
+body.mobile-mode .sg-check{ width:20px;height:20px; }
+body.mobile-mode table.sg td{ padding:9px 10px; }
+body.mobile-mode .mob-tab{ padding:9px 4px 8px; }
 
 .sel-bar{
   position:fixed;bottom:24px;left:50%;transform:translateX(-50%);z-index:9000;
@@ -264,7 +267,9 @@ table.sg td.td-muted{color:var(--muted);}
 .pu-footer a{color:var(--accent2);text-decoration:none;}
 
 /* Toast */
-.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--panel);border:1px solid var(--border);color:var(--text);padding:9px 18px;border-radius:4px;font-family:'IBM Plex Mono',monospace;font-size:.68rem;z-index:9999;opacity:0;transition:opacity .3s;pointer-events:none;}
+/* Top centre: the bottom is where the comp bar and the mobile drawer live */
+.toast{position:fixed;top:64px;left:50%;transform:translateX(-50%);max-width:min(92vw,520px);text-align:center;background:var(--panel);border:1px solid var(--border);color:var(--text);padding:9px 18px;border-radius:4px;font-family:'IBM Plex Mono',monospace;font-size:.68rem;z-index:9999;opacity:0;transition:opacity .3s;pointer-events:none;box-shadow:0 6px 24px rgba(0,0,0,.5);}
+body.mobile-mode .toast{top:56px;}
 .toast.show{opacity:1;}
 .toast.err{border-color:var(--danger);color:var(--danger);}
 
@@ -347,6 +352,23 @@ body.mobile-mode header { padding:0 10px; height:44px; }
 body.mobile-mode .logo  { font-size:1rem; letter-spacing:.06em; }
 body.mobile-mode .header-right { gap:6px; }
 body.mobile-mode .reg-btn { font-size:.52rem; padding:3px 7px; }
+/* Header has to fit a 360px phone: drop what's duplicated elsewhere, clip the rest */
+header { gap:12px; min-width:0; }
+.logo { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0; flex:1 1 auto; }
+.header-right { flex:0 0 auto; }
+.freshness { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:34ch; }
+body.mobile-mode .freshness { display:none; }
+body.mobile-mode #hdr-gen-btn { display:none; }   /* the Comps pane has its own */
+
+/* Search progress, which lives in the sidebar the phone layout hides */
+.mob-progress { display:none; }
+body.mobile-mode .mob-progress.on {
+  display:block; position:fixed; top:44px; left:0; right:0; z-index:2100;
+  background:var(--panel); border-bottom:1px solid var(--accent); padding:7px 12px 9px;
+}
+.mob-progress-track { height:3px; background:var(--border); border-radius:2px; }
+.mob-progress-bar { height:3px; width:0; background:var(--accent); border-radius:2px; transition:width .3s; }
+.mob-progress-msg { font-family:'IBM Plex Mono',monospace; font-size:.58rem; color:var(--muted); margin-top:5px; }
 
 /* Main area: map fills all, panel overlays on top */
 body.mobile-mode .main { display:block; position:relative; height:100%; overflow:hidden; }
@@ -496,14 +518,18 @@ body.mobile-mode .result-item { padding: 12px 14px; }
 .mob-grid-wrap::-webkit-scrollbar-thumb { background: var(--border); }
 
 /* Comp slots strip */
-body.mobile-mode .sel-bar {
-  bottom: 0;
-  left: 0; right: 0;
-  border-radius: 0;
-  font-size: .58rem;
-  padding: 8px 12px;
-  gap: 8px;
+body.mobile-mode .sel-bar{
+  bottom:var(--mob-panel-h, 320px);   /* sit above the drawer, not over it */
+  left:0; right:0;
+  transform:none;
+  border-radius:0;
+  font-size:.58rem;
+  padding:8px 12px;
+  gap:8px;
+  flex-wrap:wrap;
+  justify-content:center;
 }
+body.mobile-mode .sel-bar .btn-generate{ flex:1 1 auto; }
 
 
 /* ── COLLAPSIBLE SIDEBAR ── */
@@ -1605,6 +1631,18 @@ function toast(msg, isErr=false){
 function setProgress(pct, msg){
   document.getElementById('progress-bar').style.width = pct+'%';
   document.getElementById('progress-msg').innerHTML = msg;
+  const mb = document.getElementById('mob-progress-bar');
+  const mm = document.getElementById('mob-progress-msg');
+  if(mb) mb.style.width = pct+'%';
+  if(mm) mm.innerHTML = msg;
+}
+
+// Show or hide the search progress in both layouts
+function showSearchProgress(on){
+  const wrap = document.getElementById('progress-wrap');
+  if(wrap) wrap.style.display = on ? 'block' : 'none';
+  const mob = document.getElementById('mob-progress');
+  if(mob) mob.classList.toggle('on', !!on);
 }
 
 // ── ARCGIS QUERY ──────────────────────────────────────────────────────────────
@@ -1631,8 +1669,7 @@ function resetSearchUI(){
   if(btn){ btn.disabled = false; btn.textContent = 'Search Data'; btn.title = ''; }
   const mob = document.getElementById('mob-btn-fetch');
   if(mob){ mob.disabled = false; mob.textContent = 'Search Data'; }
-  const wrap = document.getElementById('progress-wrap');
-  if(wrap) wrap.style.display = 'none';
+  showSearchProgress(false);
 }
 function isCancelled(err){ return !!(err && err.cancelled); }
 
@@ -1732,7 +1769,7 @@ async function runQuery(){
       if(typeof toast === 'function') toast('⚠ ' + errors.join(' · '), true);
       const _mb = document.getElementById('mob-btn-fetch');
       if(_mb){ _mb.disabled = false; _mb.textContent = 'Search Data'; }
-      if(typeof IS_MOBILE !== 'undefined' && IS_MOBILE && typeof mobShowPane === 'function') mobShowPane('filters');
+      if(isMobileMode() && typeof mobShowPane === 'function') mobShowPane('filters');
       return;
     }
   } catch(validationErr) {
@@ -1750,7 +1787,7 @@ async function runQuery(){
   btn.title = 'Click to stop this search';
   if(mobBtn){ mobBtn.textContent = '⏳ Searching… (tap to stop)'; }
 
-  document.getElementById('progress-wrap').style.display = 'block';
+  showSearchProgress(true);
   setProgress(5, 'Building query…');
 
   // Parse mm/dd/yyyy or yyyy-mm-dd inputs -> yyyy-mm-dd for the API
@@ -2072,44 +2109,58 @@ function buildClassFilters(){
     counts[k] = (counts[k]||0)+1;
   });
   const sorted = Object.entries(counts).sort((a,b)=>b[1]-a[1]);
-
   activeClasses = new Set(sorted.map(([k])=>k));
-  const bar = document.getElementById('filter-bar');
-  bar.innerHTML = '';
+  _classChipData = sorted;
+  renderClassChips();
+}
 
-  // "All" chip
-  const all = document.createElement('span');
-  all.className = 'chip active';
-  all.textContent = 'All';
-  all.dataset.key = '__all__';
-  all.addEventListener('click', ()=>{
-    if(activeClasses.size === sorted.length){
-      activeClasses.clear();
-    } else {
-      activeClasses = new Set(sorted.map(([k])=>k));
-    }
-    document.querySelectorAll('.chip').forEach(c=>{
-      if(c.dataset.key==='__all__') c.classList.toggle('active', activeClasses.size===sorted.length);
-      else c.classList.toggle('active', activeClasses.has(c.dataset.key));
-    });
-    render();
+// Chip data for the desktop bar and the mobile Results pane
+var _classChipData = [];
+
+function syncChipStates(){
+  document.querySelectorAll('.chip').forEach(c => {
+    if(c.dataset.key === '__all__') c.classList.toggle('active', activeClasses.size === _classChipData.length);
+    else c.classList.toggle('active', activeClasses.has(c.dataset.key));
   });
-  bar.appendChild(all);
+}
 
-  sorted.slice(0,8).forEach(([name, cnt])=>{
-    const chip = document.createElement('span');
-    chip.className = 'chip active';
-    chip.textContent = `${name.slice(0,18)} (${cnt})`;
-    chip.dataset.key = name;
-    chip.addEventListener('click', ()=>{
-      if(activeClasses.has(name)) activeClasses.delete(name);
-      else activeClasses.add(name);
-      chip.classList.toggle('active', activeClasses.has(name));
-      document.querySelector('.chip[data-key="__all__"]')
-        .classList.toggle('active', activeClasses.size===sorted.length);
+// Both chip bars are built here, with real listeners on each copy
+function renderClassChips(){
+  const sorted = _classChipData;
+  ['filter-bar','mob-filter-chips'].forEach(barId => {
+    const bar = document.getElementById(barId);
+    if(!bar) return;
+    bar.innerHTML = '';
+    if(!sorted.length){
+      bar.innerHTML = '<span style="font-family:\'IBM Plex Mono\',monospace;font-size:.58rem;color:var(--muted)">Run query to see filters</span>';
+      return;
+    }
+
+    const all = document.createElement('span');
+    all.className = 'chip' + (activeClasses.size === sorted.length ? ' active' : '');
+    all.textContent = 'All';
+    all.dataset.key = '__all__';
+    all.addEventListener('click', () => {
+      if(activeClasses.size === sorted.length) activeClasses.clear();
+      else activeClasses = new Set(sorted.map(([k]) => k));
+      syncChipStates();
       render();
     });
-    bar.appendChild(chip);
+    bar.appendChild(all);
+
+    sorted.slice(0,8).forEach(([name, cnt]) => {
+      const chip = document.createElement('span');
+      chip.className = 'chip' + (activeClasses.has(name) ? ' active' : '');
+      chip.textContent = `${name.slice(0,18)} (${cnt})`;
+      chip.dataset.key = name;
+      chip.addEventListener('click', () => {
+        if(activeClasses.has(name)) activeClasses.delete(name);
+        else activeClasses.add(name);
+        syncChipStates();
+        render();
+      });
+      bar.appendChild(chip);
+    });
   });
 }
 
@@ -2901,17 +2952,38 @@ function toggleGrid(){
   });
 })();
 
+// Column order differs between the desktop and mobile tables, so each has its own map
+const GRID_COLUMNS = {
+  'sg-table':     ['','address','sale_date','sale_price','acres','ppa','class_desc','district','impv_value','razed_score'],
+  'mob-sg-table': ['','address','sale_date','sale_price','acres','ppa','class_desc','razed_score'],
+};
+
 function sortGrid(col){
   if(gridSortCol === col) gridSortDir *= -1;
   else { gridSortCol = col; gridSortDir = -1; }
-  // Update header classes
-  document.querySelectorAll('table.sg thead th').forEach(th => {
-    th.classList.remove('sort-asc','sort-desc');
+  // Mark the sorted column in whichever table shows it
+  Object.entries(GRID_COLUMNS).forEach(([tableId, cols]) => {
+    const ths = document.querySelectorAll(`#${tableId} thead th`);
+    ths.forEach(th => th.classList.remove('sort-asc','sort-desc'));
+    const th = ths[cols.indexOf(col)];
+    if(th) th.classList.add(gridSortDir === 1 ? 'sort-asc' : 'sort-desc');
   });
-  const idx = ['','address','sale_date','sale_price','acres','ppa','class_desc','district','impv_value','razed_score'];
-  const th = document.querySelectorAll('table.sg thead th')[idx.indexOf(col)];
-  if(th) th.classList.add(gridSortDir === 1 ? 'sort-asc' : 'sort-desc');
   renderGrid();
+  mobOnRender();
+}
+
+// Shared comparator so both grids sort the same way
+function gridSortRows(rows){
+  return rows.sort((a, b) => {
+    let av = a[gridSortCol], bv = b[gridSortCol];
+    if(typeof av === 'string') av = av.toLowerCase();
+    if(typeof bv === 'string') bv = bv.toLowerCase();
+    if(av == null && bv != null) return 1;
+    if(bv == null && av != null) return -1;
+    if(av < bv) return -gridSortDir;
+    if(av > bv) return gridSortDir;
+    return 0;
+  });
 }
 
 // Lightweight: update only selected-row highlights without full re-render
@@ -2937,15 +3009,7 @@ function renderGrid(){
   // Add computed ppa for sorting
   const rows = filtered.map(s => ({ ...s, ppa: s.acres > 0 ? s.sale_price / s.acres : 0 }));
 
-  // Sort
-  rows.sort((a, b) => {
-    let av = a[gridSortCol], bv = b[gridSortCol];
-    if(typeof av === 'string') av = av.toLowerCase();
-    if(typeof bv === 'string') bv = bv.toLowerCase();
-    if(av < bv) return -gridSortDir;
-    if(av > bv) return gridSortDir;
-    return 0;
-  });
+  gridSortRows(rows);
 
   // Update count
   const countEl = document.getElementById('grid-count');
@@ -2986,10 +3050,9 @@ function renderGrid(){
 
     // Click row to fly to map marker and also toggle selection
     tr.addEventListener('click', (e) => {
-      if(e.target.type === 'checkbox') return;
+      if(e.target.type === 'checkbox' || e.target.tagName === 'A') return;
+      if(selModeOn){ sgToggleComp(s.parcel, tr.querySelector('input.sg-check')); return; }
       map.setView([s.lat, s.lng], 17);
-      // Also highlight the parcel
-      toast(`${s.address || s.parcel} · ${fmtFull(s.sale_price)}`);
     });
 
     tbody.appendChild(tr);
@@ -3064,7 +3127,7 @@ function toggleSelMode(){
   btn.textContent = selModeOn ? '☑ Selecting…' : '☑ Select Comps';
   document.getElementById('sel-bar').classList.toggle('hidden', !selModeOn && selectedComps.length === 0);
   renderGrid(); // sync checkbox state in grid
-  if(IS_MOBILE) mobRenderComps();
+  if(isMobileMode()) mobRenderComps();
   if(!selModeOn && selectedComps.length === 0) clearSelection();
   toast(selModeOn ? 'Click up to 5 sales on the map or list to select comps' : 'Selection mode off');
 }
@@ -3433,14 +3496,23 @@ async function buildAndDownloadDocx(comps){
 
 
 // ── MOBILE LAYOUT ─────────────────────────────────────────────────────────────
-// Detect touch device under 900px — covers all phones and most tablets
-const IS_MOBILE = ('ontouchstart' in window || navigator.maxTouchPoints > 0) && window.innerWidth < 900;
+// Mobile layout follows the window, so resizing or rotating switches properly
+// instead of leaving the page in whatever mode it happened to load in.
+const MOBILE_MQ = window.matchMedia('(max-width: 899px)');
+function isMobileMode(){ return document.body.classList.contains('mobile-mode'); }
 
-// Apply mobile mode based on touch capability and width
-if(IS_MOBILE){
-  document.body.classList.add('mobile-mode');
+function applyMobileMode(){
+  const wantMobile = MOBILE_MQ.matches;
+  if(wantMobile === isMobileMode()) return;
+  document.body.classList.toggle('mobile-mode', wantMobile);
+  if(wantMobile && document.getElementById('mob-panel') && !_mobInited) mobInit();
+  if(typeof render === 'function' && allSales.length) render();
+  setTimeout(() => map.invalidateSize(), 60);
 }
+applyMobileMode();
+MOBILE_MQ.addEventListener('change', applyMobileMode);
 // Mobile panel markup sits after this script, so init once the whole page has parsed
+var _mobInited = false;
 document.addEventListener('DOMContentLoaded', () => {
   if(document.getElementById('mob-panel')) mobInit();
 });
@@ -3451,6 +3523,7 @@ var _mobPanelH   = 320;
 const MOB_SNAP   = { collapsed: 88, half: 320, full: Math.round(window.innerHeight * 0.82) };
 
 function mobInit(){
+  _mobInited = true;
   // Set initial panel height
   mobSetHeight(MOB_SNAP.half, true);
 
@@ -3567,24 +3640,23 @@ function syncMobFilter(){
   sync('mob-max-records', 'q-limit');
 }
 
-function mobFetch(){
+async function mobFetch(){
+  const btn = document.getElementById('mob-btn-fetch');
+  if(isFetching){ cancelQuery(); return; }   // second tap stops the search
   syncMobFilter();
-  runQuery();
-  // Switch to results after fetch starts
-  setTimeout(() => mobShowPane('results'), 500);
+  await runQuery();
+  // Only move off the filters once there is something to look at
+  if(allSales.length) mobShowPane('results');
 }
 
 // ── Results pane ──────────────────────────────────────────────────────────
 function mobRenderResults(){
-  if(!IS_MOBILE) return;
+  if(!isMobileMode()) return;
   const filtered = typeof getFiltered === 'function' ? getFiltered() : allSales || [];
   const countEl  = document.getElementById('mob-results-count');
   if(countEl) countEl.textContent = filtered.length.toLocaleString() + ' results';
 
-  // Filter chips — sync from desktop filter-bar
-  const chips    = document.getElementById('mob-filter-chips');
-  const srcChips = document.getElementById('filter-bar');
-  if(chips && srcChips) chips.innerHTML = srcChips.innerHTML;
+  // Chips are rendered with their own listeners by renderClassChips()
 
   // Results list
   const listEl = document.getElementById('mob-results-list');
@@ -3620,13 +3692,12 @@ function mobRenderResults(){
 
 // ── Grid pane ─────────────────────────────────────────────────────────────
 function mobRenderGrid(){
-  if(!IS_MOBILE) return;
+  if(!isMobileMode()) return;
   const filtered = typeof getFiltered === 'function' ? getFiltered() : allSales || [];
   const countEl  = document.getElementById('mob-grid-count');
   if(countEl) countEl.textContent = filtered.length.toLocaleString() + ' sales';
 
-  const rows = filtered.map(s => ({...s, ppa: s.acres > 0 ? s.sale_price / s.acres : 0}));
-  rows.sort((a,b) => b.sale_date - a.sale_date);
+  const rows = gridSortRows(filtered.map(s => ({...s, ppa: s.acres > 0 ? s.sale_price / s.acres : 0})));
 
   const tbody = document.getElementById('mob-sg-body');
   if(!tbody) return;
@@ -3653,6 +3724,7 @@ function mobRenderGrid(){
     `;
     tr.addEventListener('click', e => {
       if(e.target.type==='checkbox'||e.target.tagName==='A') return;
+      if(selModeOn){ sgToggleComp(s.parcel, tr.querySelector('input.sg-check')); return; }
       map.setView([s.lat, s.lng], 16);
       mobSetHeight(MOB_SNAP.collapsed);
     });
@@ -3662,7 +3734,7 @@ function mobRenderGrid(){
 
 // ── Comps pane ────────────────────────────────────────────────────────────
 function mobRenderComps(){
-  if(!IS_MOBILE) return;
+  if(!isMobileMode()) return;
   const slots = document.getElementById('mob-comp-slots');
   const genBtn = document.getElementById('mob-gen-btn');
   if(!slots) return;
@@ -3684,7 +3756,7 @@ function mobRenderComps(){
 
 // ── Hook into render() to refresh mobile panes ────────────────────────────
 function mobOnRender(){
-  if(!IS_MOBILE) return;
+  if(!isMobileMode()) return;
   if(_mobPane === 'results') mobRenderResults();
   if(_mobPane === 'grid')    mobRenderGrid();
   if(_mobPane === 'comps')   mobRenderComps();
@@ -3835,6 +3907,12 @@ document.getElementById('q-date-to').value =
 <!-- ══════════════════════════════════════════════════
      MOBILE PANEL  — self-contained, never moves DOM
      ══════════════════════════════════════════════════ -->
+<!-- Search progress for the phone layout (the sidebar one is hidden there) -->
+<div class="mob-progress" id="mob-progress">
+  <div class="mob-progress-track"><div class="mob-progress-bar" id="mob-progress-bar"></div></div>
+  <div class="mob-progress-msg" id="mob-progress-msg">Searching…</div>
+</div>
+
 <div class="mob-panel" id="mob-panel">
 
   <!-- Drag handle -->
@@ -3884,7 +3962,7 @@ document.getElementById('q-date-to').value =
       </div>
       <div style="padding:8px 14px 0">
         <div class="field-label">Max Improvement Value</div>
-        <select id="mob-impv-max" style="width:100%;margin-top:4px" onchange="syncMobFilter()">
+        <select id="mob-impv-max" style="width:100%;margin-top:4px" onchange="syncMobFilter();render()">
           <option value="-1" selected>Any (no limit)</option>
           <option value="0">$0 (strictly vacant)</option>
           <option value="1000">≤ $1,000</option>
@@ -3897,7 +3975,7 @@ document.getElementById('q-date-to').value =
       </div>
       <div style="padding:8px 14px 0">
         <div class="field-label">Razed / Redeveloped Sites</div>
-        <select id="mob-razed" style="width:100%;margin-top:4px" onchange="syncMobFilter()">
+        <select id="mob-razed" style="width:100%;margin-top:4px" onchange="syncMobFilter();render()">
           <option value="all" selected>Show all sales</option>
           <option value="only">Possible razed only</option>
           <option value="exclude">Exclude razed sites</option>
@@ -3905,7 +3983,7 @@ document.getElementById('q-date-to').value =
       </div>
       <div style="padding:8px 14px 0">
         <div class="field-label">Flood Zone</div>
-        <select id="mob-flood" style="width:100%;margin-top:4px" onchange="syncMobFilter()">
+        <select id="mob-flood" style="width:100%;margin-top:4px" onchange="syncMobFilter();render()">
           <option value="all" selected>All (any flood status)</option>
           <option value="none">Not in flood zone</option>
           <option value="flood">In flood zone only</option>
