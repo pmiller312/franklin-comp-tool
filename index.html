@@ -11,7 +11,9 @@
 <style>
 :root {
   --bg:#0c0e12; --panel:#131720; --border:#1f2736; --accent:#e8c84a;
-  --accent2:#4ae8b0; --text:#d4dae4; --muted:#5a6478; --danger:#e84a4a;
+  /* --muted was #5a6478, about 3.1:1 on the panel — below the readable minimum
+     for the small type it carries (dates, acres, class, district) */
+  --accent2:#4ae8b0; --text:#d4dae4; --muted:#8a94a8; --danger:#e84a4a;
   --green:#2ecc71; --orange:#f39c12;
 }
 *{margin:0;padding:0;box-sizing:border-box;}
@@ -33,6 +35,12 @@ header{
 .main{display:grid;grid-template-columns:300px 1fr;overflow:hidden;}
 .right-pane{display:flex;flex-direction:column;overflow:hidden;min-height:0;}
 .map-wrap{flex:1;position:relative;min-height:0;overflow:hidden;} /* clips the closed regression drawer so it can't cover the grid */
+
+/* Keyboard focus has to be visible — everything below is reachable by tab */
+:where(a,button,input,select,[tabindex]):focus-visible{
+  outline:2px solid var(--accent); outline-offset:2px; border-radius:2px;
+}
+table.sg thead th:focus-visible{ outline-offset:-2px; }
 
 /* ── SIDEBAR ── */
 .sidebar{background:var(--panel);border-right:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden;position:relative;min-height:0;}
@@ -76,12 +84,12 @@ body.mobile-mode .query-panel .btn-clear { display: none; }
 .stat-cell{padding:8px 10px;border-right:1px solid var(--border);text-align:center;}
 .stat-cell:last-child{border-right:none;}
 .stat-val{font-family:'Bebas Neue',sans-serif;font-size:1.1rem;color:var(--accent);letter-spacing:.05em;}
-.stat-label{font-family:'IBM Plex Mono',monospace;font-size:.52rem;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-top:1px;}
+.stat-label{font-family:'IBM Plex Mono',monospace;font-size:.62rem;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-top:1px;}
 
 /* Filter chips */
 .filter-bar{padding:8px 10px;border-bottom:1px solid var(--border);display:flex;flex-wrap:wrap;gap:4px;flex-shrink:0;}
 .chip{
-  font-family:'IBM Plex Mono',monospace;font-size:.58rem;padding:3px 8px;
+  font-family:'IBM Plex Mono',monospace;font-size:.62rem;padding:4px 9px;
   border-radius:12px;cursor:pointer;border:1px solid var(--border);
   color:var(--muted);background:transparent;transition:all .12s;
 }
@@ -286,7 +294,7 @@ body.mobile-mode .toast{top:56px;}
   position:absolute;bottom:0;left:0;right:0;z-index:2000;
   background:var(--panel);border-top:2px solid var(--accent2);
   transform:translateY(100%);transition:transform .3s ease;
-  max-height:min(70vh,100%);display:flex;flex-direction:column;
+  max-height:min(70vh,100%);min-height:min(240px,100%);display:flex;flex-direction:column;
 }
 .reg-drawer.open{transform:translateY(0);}
 .reg-drawer-header{
@@ -433,13 +441,13 @@ body.mobile-mode .mob-panel.no-transition { transition: none; }
 }
 .mob-tab {
   flex: 1;
-  padding: 7px 4px 6px;
+  padding: 8px 4px 7px;
   background: transparent;
   border: none;
   border-bottom: 2px solid transparent;
   color: var(--muted);
   font-family: 'IBM Plex Mono', monospace;
-  font-size: .55rem;
+  font-size: .62rem;
   letter-spacing: .04em;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
@@ -833,7 +841,7 @@ body.mobile-mode .sel-bar .btn-generate{ flex:1 1 auto; }
       <!-- How to use -->
       <div style="margin-top:10px;border:1px solid #1f2736;border-radius:3px;padding:8px 10px;background:#0a0c10;font-family:'IBM Plex Mono',monospace;font-size:.57rem;line-height:1.65;">
         <div style="color:var(--accent);font-weight:700;letter-spacing:.06em;margin-bottom:4px;">HOW TO SELECT COMPS</div>
-        <div style="color:#8a9a8a;">
+        <div style="color:#9fb09f;">
           1. <span style="color:var(--text)">Search</span> using the filters above<br>
           2. Click <span style="color:var(--accent2)">☑ Select Comps</span> button (appears above results list)<br>
           3. <span style="color:var(--text)">Click dots on the map</span> or <span style="color:var(--text)">items in the list</span> to select up to 5 sales<br>
@@ -844,9 +852,9 @@ body.mobile-mode .sel-bar .btn-generate{ flex:1 1 auto; }
       <!-- Vacancy verification disclosure -->
       <div style="margin-top:10px;border:1px solid #2a3a2a;border-radius:3px;padding:8px 10px;background:#0d130d;font-family:'IBM Plex Mono',monospace;font-size:.57rem;line-height:1.65;">
         <div style="color:#4ae8b0;font-weight:700;letter-spacing:.06em;margin-bottom:4px;">✓ VACANCY VERIFICATION</div>
-        <div id="vacancy-detail" style="color:#8a9a8a;">All results are filtered to <span style="color:var(--text);">Ohio DTE vacant land class codes</span>. <span style="color:var(--text);">Max Improvement Value</span> sets the improvement value test applied to every parcel: <span style="color:var(--text);">= $0</span> is strictly vacant, a dollar amount allows a small tolerance, and <span style="color:var(--text);">Any</span> applies no improvement test.</div>
-        <div style="margin-top:5px;color:#8a9a8a;">When a limit is set, <span style="color:var(--text);">all parcels</span> in a multi-parcel sale (matched by date + price + owner) must pass — if any parcel exceeds the limit, the entire sale is excluded.</div>
-        <div style="margin-top:5px;border-top:1px solid #1a2a1a;padding-top:5px;color:#5a6a5a;">🛰 <em>Imagery:</em> The map opens on Esri World Imagery. The button cycles to the dark map, then OSIP Ohio (6-inch, public domain, © OGRIP / Ohio DAS), then back to Esri. OSIP is Ohio-specific leaf-off orthoimagery; resolution and vintage vary by county.<br><br>⚠ <em>Razed-site detection</em> is heuristic. Signals: keyword match in legal/deed (strongest, +3), utilities on vacant parcel (+1/+2), sale price 20×+ assessed land (+1/+2), platted lot number (+1). Score ≥ 2 = flagged. Note: Ohio assesses at ~35% of market so normal vacant land already trades at 5-6× assessed — only extreme outliers (20×+) are scored. Both improvement tests reflect assessed values, not physical inspections. A recently demolished structure or assessment lag could cause either field to lag behind reality. Independent verification is recommended for individual comps.</div>
+        <div id="vacancy-detail" style="color:#9fb09f;">All results are filtered to <span style="color:var(--text);">Ohio DTE vacant land class codes</span>. <span style="color:var(--text);">Max Improvement Value</span> sets the improvement value test applied to every parcel: <span style="color:var(--text);">= $0</span> is strictly vacant, a dollar amount allows a small tolerance, and <span style="color:var(--text);">Any</span> applies no improvement test.</div>
+        <div style="margin-top:5px;color:#9fb09f;">When a limit is set, <span style="color:var(--text);">all parcels</span> in a multi-parcel sale (matched by date + price + owner) must pass — if any parcel exceeds the limit, the entire sale is excluded.</div>
+        <div style="margin-top:5px;border-top:1px solid #1a2a1a;padding-top:5px;color:#8fa08f;">🛰 <em>Imagery:</em> The map opens on Esri World Imagery. The button cycles to the dark map, then OSIP Ohio (6-inch, public domain, © OGRIP / Ohio DAS), then back to Esri. OSIP is Ohio-specific leaf-off orthoimagery; resolution and vintage vary by county.<br><br>⚠ <em>Razed-site detection</em> is heuristic. Signals: keyword match in legal/deed (strongest, +3), utilities on vacant parcel (+1/+2), sale price 20×+ the auditor's appraised land value (+1/+2), platted lot number (+1). Score ≥ 2 = flagged. The value fields read here are <span style="color:var(--text);">appraised (market) values</span>, not the 35% taxable figure. Across 2024–2026 vacant sales the median sale runs about 5× appraised land value and roughly a quarter exceed 20×, so treat the price signal as suggestive. Improvement figures come from the auditor's records, not a physical inspection, and a recent demolition or a lagging update can leave either field out of date. Verify individual comps independently.</div>
       </div>
     </div>
 
@@ -1479,7 +1487,7 @@ const RECORDER_URLS = {
   franklin:  'https://franklin.oh.publicsearch.us/results?department=RP',
   cuyahoga:  'https://cuyahoga.oh.publicsearch.us/results?department=RP',
   delaware:  'https://delaware.dts-central-oh.com/PaxWorld/',
-  medina:    'https://recorder.co.medina.oh.us/document-search/',
+  medina:    'https://recorder.medinacounty.gov/document-search/',
 };
 
 // Cached per sale: this is four Date objects, three regexes and a JSON encode,
@@ -1489,40 +1497,39 @@ function saleRecorderUrl(s){
   return s._recUrl;
 }
 
+// Recorder search link.
+// The party parameter is "parties" — the tool used to send "partyName", which the
+// site ignores, so every link ran as a date-range-only search (verified against
+// the recorders' own advanced search forms, Sep 2026).
 function recorderUrl(ownerName, saleTs){
   const recBase = RECORDER_URLS[activeCounty] || RECORDER_URLS.franklin;
-  // Delaware and Medina use different platforms — no URL param support, return base URL
-  if(activeCounty === 'delaware' || activeCounty === 'medina'){
-    return recBase;
-  }
+  // Delaware and Medina run platforms with no URL parameters — open their search page
+  if(activeCounty === 'delaware' || activeCounty === 'medina') return recBase;
+
   const raw = (ownerName||'').trim();
   if(!raw) return recBase.split('/results')[0] + '/';
 
-  // Build search term: full name for businesses, full name for individuals too
-  // (searching both grantor+grantee means full name is safe and more specific)
+  // Individuals match on their full indexed name (LASTNAME FIRSTNAME MIDDLE);
+  // businesses match better with the legal suffix stripped off.
   const isBusiness = /\s+(LLC|INC|CORP|LTD|LP|LLP)\.?$/i.test(raw) || /\d/.test(raw) || /^(THE\s|CITY\s|COUNTY\s|STATE\s|BOARD\s)/i.test(raw);
-  let searchTerm;
+  let searchTerm = raw;
   if(isBusiness){
-    // Strip legal suffix for businesses, keep first two meaningful words
     const stripped = raw.replace(/\s+(LLC|L\.L\.C\.?|INC\.?|CORP\.?|LTD\.?|L\.P\.?|LLP\.?|CO\.)$/i,'').trim();
     const words = stripped.split(/\s+/).filter(Boolean);
-    searchTerm = words.slice(0,2).join(' ');
-    if(!searchTerm) searchTerm = raw.split(' ')[0];
-  } else {
-    // Individual: use full name — recorder will match on it in either grantor or grantee position
-    searchTerm = raw;
+    searchTerm = words.slice(0,2).join(' ') || raw.split(' ')[0];
   }
 
-  // Search BOTH grantor and grantee — current owner (from GIS) is the grantee on the deed
-  const parties = JSON.stringify({ partyName: [{ term: searchTerm, types: ['grantor','grantee'] }] });
+  // Search both sides: the Auditor's owner is the grantee on the most recent deed
+  const parties = JSON.stringify({ parties: [{ term: searchTerm, types: ['grantor','grantee'] }] });
 
-  // Date range: sale date −10 days to +10 days, end capped at today
+  // Recording follows the sale, sometimes by weeks, so the window runs from a week
+  // before the sale to two months after (never past today).
   let dateRange = '';
   if(saleTs){
     const d = new Date(saleTs);
     if(!isNaN(d)){
-      const start = new Date(d); start.setDate(start.getDate()-10);
-      let   end   = new Date(d); end.setDate(end.getDate()+10);
+      const start = new Date(d); start.setDate(start.getDate() - 7);
+      let   end   = new Date(d); end.setDate(end.getDate() + 60);
       const today = new Date();
       if(end > today) end = today;
       const fmt = dt => dt.getFullYear().toString()
@@ -1532,22 +1539,16 @@ function recorderUrl(ownerName, saleTs){
     }
   }
 
-  return recBase
-    + '&parties=' + encodeURIComponent(parties)
-    + dateRange
-    + '&searchType=advancedSearch';
+  return recBase + '&parties=' + encodeURIComponent(parties) + dateRange + '&searchType=advancedSearch';
 }
 
-function recorderLabel(saleTs){
-  if(!saleTs) return 'Recorder Data';
-  const d = new Date(saleTs);
-  if(isNaN(d)) return 'Recorder Data';
-  const start = new Date(d); start.setDate(start.getDate()-10);
-  let   end   = new Date(d); end.setDate(end.getDate()+10);
-  const today = new Date();
-  if(end > today) end = today;
-  const mo = n => ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][n];
-  return 'Recorder Data';
+// What a recorder link will actually search, for the link's tooltip
+function recorderLinkTitle(s){
+  if(activeCounty === 'delaware' || activeCounty === 'medina')
+    return 'Opens the county recorder search page (this county has no direct link)';
+  const name = (s.owner || '').trim();
+  if(!name) return 'Opens the county recorder search';
+  return `Recorder search for "${name}", documents recorded from a week before to two months after ${fmtDate(s.sale_date)}`;
 }
 
 // Flood zone label helper
@@ -2053,13 +2054,15 @@ function processResults(features, dateFrom, dateTo, impvMaxRaw, queryCc, queryCo
     if(s.water === 'Y' && s.sewer === 'Y'){ score += 2; reasons.push('Water & sewer service present on vacant parcel'); }
     else if(s.water === 'Y' || s.sewer === 'Y'){ score += 1; reasons.push('Utility service present on vacant parcel'); }
 
-    // Signal 3: Sale price GREATLY exceeds assessed land value
-    // Ohio assesses at ~35% of market so median ratio for normal vacant lots is ~5-6×.
-    // Only flag extreme outliers — 20×+ suggests something beyond normal market dynamics.
+    // Signal 3: Sale price greatly exceeds the auditor's APPRAISED land value.
+    // (These fields are appraised/market values — taxable value is 35% of them and is
+    // not what the app reads.) Measured across 2024-2026 vacant sales, the median sale
+    // runs about 5× appraised land value and roughly a quarter exceed 20×, so this
+    // signal is suggestive, not conclusive.
     if(s.lnd_value > 0){
       const ratio = s.sale_price / s.lnd_value;
-      if(ratio > 30)     { score += 2; reasons.push(`Sale price ${ratio.toFixed(0)}× assessed land value (extreme outlier)`); }
-      else if(ratio > 20){ score += 1; reasons.push(`Sale price ${ratio.toFixed(0)}× assessed land value (high outlier)`); }
+      if(ratio > 30)     { score += 2; reasons.push(`Sale price ${ratio.toFixed(0)}× appraised land value (top few percent)`); }
+      else if(ratio > 20){ score += 1; reasons.push(`Sale price ${ratio.toFixed(0)}× appraised land value (high)`); }
     }
 
     // Signal 4: Legal description references a lot number in a platted subdivision
@@ -2160,6 +2163,7 @@ function renderClassChips(){
     all.className = 'chip' + (activeClasses.size === sorted.length ? ' active' : '');
     all.textContent = 'All';
     all.dataset.key = '__all__';
+    makeActivatable(all, 'Show or hide every class');
     all.addEventListener('click', () => {
       if(activeClasses.size === sorted.length) activeClasses.clear();
       else activeClasses = new Set(sorted.map(([k]) => k));
@@ -2173,6 +2177,7 @@ function renderClassChips(){
       chip.className = 'chip' + (activeClasses.has(name) ? ' active' : '');
       chip.textContent = `${name.slice(0,18)} (${cnt})`;
       chip.dataset.key = name;
+      makeActivatable(chip, `Filter: ${name}`);
       chip.addEventListener('click', () => {
         if(activeClasses.has(name)) activeClasses.delete(name);
         else activeClasses.add(name);
@@ -2317,7 +2322,7 @@ function buildFullPopup(s, color, d, flood){
       <div class="pu-grid">
         ${row('Owner', esc(owner).slice(0,30))}
         ${row('Parcel #', s.parcel)}
-        ${row('Recorder Data', `<a href="${saleRecorderUrl(s)}" target="_blank" style="color:var(--accent2);text-decoration:underline">Recorder Data</a>`)}
+        ${row('Recorder Data', `<a href="${saleRecorderUrl(s)}" target="_blank" title="${esc(recorderLinkTitle(s))}" style="color:var(--accent2);text-decoration:underline">Recorder Data</a>`)}
         ${row('Mail Address', mailAddr.slice(0,30)||'—')}
         ${row('Neighborhood', nbhd)}
         ${row('Use / Class', esc(String(useDesc).slice(0,26)))}
@@ -2461,6 +2466,7 @@ function updateList(filtered){
     const color = priceColor(s.sale_price);
     const el = document.createElement('div');
     el.className = 'result-item';
+    makeActivatable(el, `${s.address || s.parcel} — ${fmtFull(s.sale_price)}`);
     el.innerHTML = `
       <div class="result-addr">${s.razed_flag ? '🔥 ' : ''}${esc(s.address||s.parcel)}</div>
       <div class="result-row">
@@ -2468,7 +2474,7 @@ function updateList(filtered){
         <span class="result-date">${fmtDate(s.sale_date)}</span>
       </div>
       <div class="result-sub">${s.acres||0} ac · ${esc((s.class_desc||s.class_cd||'').slice(0,25))} · ${esc((s.district||'').slice(0,20))}</div>
-      <div class="result-sub"><a href="${saleRecorderUrl(s)}" target="_blank" onclick="event.stopPropagation()" style="color:var(--accent2);text-decoration:none;font-size:.56rem">Recorder Data</a></div>
+      <div class="result-sub"><a href="${saleRecorderUrl(s)}" target="_blank" title="${esc(recorderLinkTitle(s))}" onclick="event.stopPropagation()" style="color:var(--accent2);text-decoration:none;font-size:.56rem">Recorder Data</a></div>
     `;
     el.addEventListener('click',()=>{
       if(selModeOn){ toggleCompSelection(s); return; }
@@ -2679,7 +2685,8 @@ function runRegression(){
   const ybar   = y.reduce((s,v)=>s+v,0)/n;
   const yActual= raw_y;
   const yPred  = useLog==='log' ? yhat.map(v=>Math.exp(v)) : yhat;
-  const medPPA = [...yActual].sort((a,b)=>a-b)[Math.floor(n/2)];
+  const _sortedY = [...yActual].sort((a,b)=>a-b);
+  const medPPA = n % 2 ? _sortedY[(n-1)/2] : (_sortedY[n/2 - 1] + _sortedY[n/2]) / 2;
 
   // Time trend: annualised change
   const yearFrac  = dateRange / (1000*60*60*24*365);
@@ -2782,7 +2789,7 @@ function runRegression(){
       </div>
       <div class="reg-stat-box">
         <div class="rsv">${useLog==='log'?RMSE.toFixed(3):fmtFull(RMSE)}</div>
-        <div class="rsl">RMSE</div>
+        <div class="rsl">${useLog==='log'?'RMSE (ln units)':'RMSE'}</div>
       </div>
       <div class="reg-stat-box">
         <div class="rsv">${df}</div>
@@ -2882,6 +2889,32 @@ function runRegression(){
 }
 
 
+// Make a plain element behave like a button for keyboard users
+function makeActivatable(el, label){
+  el.tabIndex = 0;
+  el.setAttribute('role', 'button');
+  if(label) el.setAttribute('aria-label', label);
+  el.addEventListener('keydown', e => {
+    if(e.key === 'Enter' || e.key === ' '){ e.preventDefault(); el.click(); }
+  });
+}
+
+// Sortable headers: reachable by tab, activated by Enter or Space, and they
+// announce their sort state to screen readers
+function wireSortableHeaders(){
+  Object.entries(GRID_COLUMNS).forEach(([tableId, cols]) => {
+    document.querySelectorAll(`#${tableId} thead th`).forEach((th, i) => {
+      if(!cols[i] || !th.getAttribute('onclick')) return;
+      th.tabIndex = 0;
+      th.setAttribute('role', 'columnheader');
+      th.addEventListener('keydown', e => {
+        if(e.key === 'Enter' || e.key === ' '){ e.preventDefault(); sortGrid(cols[i]); }
+      });
+    });
+  });
+}
+document.addEventListener('DOMContentLoaded', wireSortableHeaders);
+
 // ── SECURITY: HTML escape for untrusted data in innerHTML contexts ─────────
 function esc(str){
   if(str == null) return '';
@@ -2900,6 +2933,9 @@ var gridCollapsed = false;
 
 function setGridSize(px, skipActive){
   const pane = document.getElementById('grid-pane');
+  // Never let the grid squeeze the map (and the regression drawer) to nothing
+  const avail = document.querySelector('.right-pane')?.clientHeight || 0;
+  if(avail) px = Math.min(px, Math.max(120, avail - 260));
   gridCollapsed = false;
   pane.classList.add('animating');
   pane.classList.remove('collapsed');
@@ -2935,7 +2971,11 @@ function toggleGrid(){
   if(!handle || !pane) return;
 
   let dragging = false, startY = 0, startH = 0;
-  const MIN_H = 32, MAX_H = 700;
+  const MIN_H = 32;
+  const maxHeight = () => {
+    const avail = document.querySelector('.right-pane')?.clientHeight || 700;
+    return Math.max(160, avail - 260);      // always leave room for the map
+  };
 
   handle.addEventListener('mousedown', e => {
     dragging = true;
@@ -2951,7 +2991,7 @@ function toggleGrid(){
     if(!dragging) return;
     // Dragging up = bigger grid (delta is negative when moving up)
     const delta = startY - e.clientY;
-    const newH  = Math.min(MAX_H, Math.max(MIN_H, startH + delta));
+    const newH  = Math.min(maxHeight(), Math.max(MIN_H, startH + delta));
     pane.style.height = newH + 'px';
     if(newH <= MIN_H + 4){
       pane.classList.add('collapsed');
@@ -2987,7 +3027,7 @@ function toggleGrid(){
   document.addEventListener('touchmove', e => {
     if(!dragging) return;
     const delta = startY - e.touches[0].clientY;
-    const newH  = Math.min(MAX_H, Math.max(MIN_H, startH + delta));
+    const newH  = Math.min(maxHeight(), Math.max(MIN_H, startH + delta));
     pane.style.height = newH + 'px';
     e.preventDefault();
   }, { passive: false });
@@ -3052,7 +3092,7 @@ var _gridRows = [];        // the sorted rows behind both grids
 
 function gridRowHtml(s, isSelected){
   const ppa  = s.acres > 0 ? '$' + Math.round(s.sale_price / s.acres).toLocaleString() : '—';
-  return `<tr data-parcel="${esc(s.parcel)}" class="${isSelected ? 'sg-selected ' : ''}${s.razed_flag ? 'sg-flagged' : ''}">
+  return `<tr tabindex="0" data-parcel="${esc(s.parcel)}" class="${isSelected ? 'sg-selected ' : ''}${s.razed_flag ? 'sg-flagged' : ''}">
       <td style="text-align:center;padding:4px 6px;">
         <input type="checkbox" class="sg-check" ${isSelected ? 'checked' : ''} title="Select as comp">
       </td>
@@ -3065,13 +3105,13 @@ function gridRowHtml(s, isSelected){
       <td class="td-muted">${esc((s.district || '').slice(0, 18))}</td>
       <td class="${impvIsFlagged(s) ? 'td-razed' : 'td-muted'}">${impvDisplay(s)}</td>
       <td style="text-align:center">${s.razed_score > 0 ? s.razed_score : ''}</td>
-      <td style="padding:4px 8px;"><a href="${saleRecorderUrl(s)}" target="_blank" style="color:var(--accent2);text-decoration:none;font-size:.58rem;white-space:nowrap">Recorder Data</a></td>
+      <td style="padding:4px 8px;"><a href="${saleRecorderUrl(s)}" target="_blank" title="${esc(recorderLinkTitle(s))}" style="color:var(--accent2);text-decoration:none;font-size:.58rem;white-space:nowrap">Recorder Data</a></td>
     </tr>`;
 }
 
 function gridRowHtmlMobile(s, isSelected){
   const ppa = s.acres > 0 ? '$' + Math.round(s.sale_price / s.acres).toLocaleString() : '—';
-  return `<tr data-parcel="${esc(s.parcel)}" class="${isSelected ? 'sg-selected ' : ''}${s.razed_flag ? 'sg-flagged' : ''}">
+  return `<tr tabindex="0" data-parcel="${esc(s.parcel)}" class="${isSelected ? 'sg-selected ' : ''}${s.razed_flag ? 'sg-flagged' : ''}">
       <td style="text-align:center;padding:4px 5px"><input type="checkbox" class="sg-check" ${isSelected ? 'checked' : ''}></td>
       <td>${s.razed_flag ? '🔥 ' : ''}${esc((s.address || s.parcel).slice(0,22))}</td>
       <td class="td-muted">${fmtDate(s.sale_date)}</td>
@@ -3080,7 +3120,7 @@ function gridRowHtmlMobile(s, isSelected){
       <td>${ppa}</td>
       <td class="td-muted">${esc((s.class_desc || '').slice(0,16))}</td>
       <td style="text-align:center">${s.razed_score > 0 ? s.razed_score : ''}</td>
-      <td><a href="${saleRecorderUrl(s)}" target="_blank" style="color:var(--accent2);text-decoration:none;font-size:.54rem">📋</a></td>
+      <td><a href="${saleRecorderUrl(s)}" target="_blank" title="${esc(recorderLinkTitle(s))}" style="color:var(--accent2);text-decoration:none;font-size:.54rem">📋</a></td>
     </tr>`;
 }
 
@@ -3140,6 +3180,13 @@ function wireGrid(view){
     }
     map.setView([sale.lat, sale.lng], view === GRID_VIEWS.mobile ? 16 : 17);
     if(view === GRID_VIEWS.mobile) mobSetHeight(MOB_SNAP.collapsed);
+  });
+
+  tbody.addEventListener('keydown', e => {
+    const tr = e.target.closest && e.target.closest('tr[data-parcel]');
+    if(!tr || (e.key !== 'Enter' && e.key !== ' ')) return;
+    e.preventDefault();
+    tr.click();
   });
 
   let queued = false;
@@ -3359,7 +3406,8 @@ async function generateSalesSheet(){
       dimensions: '',
       shape:      '',
       utilities:  utils,
-      zoning:     s.use_cd || '',
+      // The GIS has no zoning district — this is the auditor's land-use class
+      zoning:     classdVal ? classdVal + (s.class_cd ? ' (class ' + s.class_cd + ')' : '') : (s.class_cd || ''),
       topography: '',
       // Only Franklin publishes a flood field. With no county field and no FEMA
       // answer, say so — do not print "No", which reads as a verified finding.
@@ -3517,7 +3565,7 @@ async function buildAndDownloadDocx(comps){
         row1('Grantee:', c.grantee),
         row1('Date of Sale:', c.sale_date),
         row1('Type of Financing (if any):', c.financing),
-        row1('Cash Equivalent Sale Price:', c.sale_price),
+        row1('Recorded Sale Price:', c.sale_price),
         row1('Conditions of Sale:', c.conditions),
         row1('Motivation of the Parties:', c.motivation),
         row1('Encumbrances:', c.encumbrances),
@@ -3541,7 +3589,7 @@ async function buildAndDownloadDocx(comps){
         row1('Dimensions:', c.dimensions),
         row1('Shape:', c.shape),
         row1('Utilities (onsite/offsite):', c.utilities),
-        row1('Zoning:', c.zoning),
+        row1('Auditor Use Class:', c.zoning),
         row1('Topography:', c.topography),
         row2('Flood Plain Data:', c.flood, 'In Flood Zone:', c.flood_zone),
         divider(),
@@ -3767,7 +3815,7 @@ function mobRenderResults(rows){
         <span class="result-date">${fmtDate(s.sale_date)}</span>
       </div>
       <div class="result-sub">${s.acres||0} ac · ${(s.class_desc||'').slice(0,22)} · ${(s.district||'').slice(0,18)}</div>
-      <div class="result-sub"><a href="${saleRecorderUrl(s)}" target="_blank" onclick="event.stopPropagation()" style="color:var(--accent2);font-size:.54rem;text-decoration:none">Recorder Data</a></div>
+      <div class="result-sub"><a href="${saleRecorderUrl(s)}" target="_blank" title="${esc(recorderLinkTitle(s))}" onclick="event.stopPropagation()" style="color:var(--accent2);font-size:.54rem;text-decoration:none">Recorder Data</a></div>
     `;
     el.addEventListener('click', e => {
       if(e.target.tagName === 'A') return;
